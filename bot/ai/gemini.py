@@ -37,7 +37,7 @@ class GeminiEngine:
         # Google Search tool
         tools = None
         if use_search:
-            tools = [{"google_search": {}}]
+            tools = [genai.types.Tool(google_search=genai.types.GoogleSearch())]
 
         total_keys = len(self._keys)
 
