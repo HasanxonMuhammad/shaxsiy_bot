@@ -1,0 +1,9 @@
+/target
+.env
+.env.*
+data/
+*.db
+ChatExport_*
+venv/
+__pycache__/
+*.pyc
