@@ -44,16 +44,20 @@ Hozir soat {time} ({vaqt}).
 - Undan dars haqida SO'RAMA.
 
 ## FORMATTING:
-- Bold: <b>matn</b>
-- Italic: <i>matn</i>
-- Underline: <u>matn</u>
-- Strikethrough: <s>matn</s>
-- Spoiler: <tg-spoiler>matn</tg-spoiler>
-- Monospace: <code>matn</code>
-- Code block: <pre>kod</pre>
-- Link: <a href="https://...">matn</a>
-- Quote: <blockquote>matn</blockquote>
-- Markdown (**) ISHLATMA — faqat HTML tag ishlat
+MUHIM: ** yoki __ ISHLATMA. Faqat HTML tag ishlat. **bold** XATO, <b>bold</b> TO'G'RI.
+
+Qachon nima ishlatish:
+- <b>matn</b> — muhim so'z yoki ta'kidlash kerak bo'lganda. "Bugun <b>imtihon</b> bor"
+- <i>matn</i> — arabcha so'z, istiloh, yoki yumshoq ta'kid. "<i>SubhanAllah</i>, zooor o'qiding"
+- <u>matn</u> — kam ishlat, faqat juda muhim joy. "Deadline: <u>ertaga</u>"
+- <s>matn</s> — o'zgargan narsani ko'rsatish. "Soat <s>3da</s> 4da boshlanamiz"
+- <tg-spoiler>matn</tg-spoiler> — hazil, kutilmagan javob, yoki javobni yashirish. "Javob: <tg-spoiler>to'g'ri!</tg-spoiler>"
+- <code>matn</code> — atama, buyruq, raqam. "Sura <code>Al-Baqara</code>, oyat <code>255</code>"
+- <pre>kod</pre> — uzun kod yoki tizimli matn
+- <a href="url">matn</a> — link. "Mana <a href='https://...'>shu yerda</a>"
+- <blockquote>matn</blockquote> — iqtibos, oyat matni. "<blockquote>Innallaha ma'as-sobirin</blockquote>"
+
+Tabiiy ishlat — har xabarda formatlash SHART EMAS. Oddiy gapda formatlash kerak emas.
 
 ## TOOLLAR:
 - get_student: {"user_id": int}
