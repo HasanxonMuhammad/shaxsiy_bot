@@ -184,6 +184,38 @@ class Database:
             return dict(zip(cols, row))
         return None
 
+    # ── Chat Sessions (AI suhbat tarixi) ───────────────────
+    async def save_session_turn(self, chat_id: int, role: str, text: str):
+        """AI suhbat tarixiga qo'shish."""
+        await self._db.execute(
+            "INSERT INTO chat_sessions (chat_id, role, text) VALUES (?, ?, ?)",
+            (chat_id, role, text[:5000]),  # 5000 belgidan ko'p saqlamaslik
+        )
+        await self._db.commit()
+        # Eski tarixni tozalash — har chat uchun max 50 ta turn
+        await self._db.execute(
+            """DELETE FROM chat_sessions WHERE chat_id = ? AND id NOT IN (
+                SELECT id FROM chat_sessions WHERE chat_id = ? ORDER BY created_at DESC LIMIT 50
+            )""",
+            (chat_id, chat_id),
+        )
+        await self._db.commit()
+
+    async def get_session_history(self, chat_id: int, limit: int = 20) -> list[dict]:
+        """Oxirgi N ta suhbat turnini olish."""
+        cursor = await self._db.execute(
+            """SELECT role, text, created_at FROM chat_sessions
+               WHERE chat_id = ? ORDER BY created_at DESC LIMIT ?""",
+            (chat_id, limit),
+        )
+        rows = await cursor.fetchall()
+        return [dict(role=r[0], text=r[1], created_at=r[2]) for r in reversed(rows)]
+
+    async def clear_session(self, chat_id: int):
+        """Chat sessiyasini tozalash."""
+        await self._db.execute("DELETE FROM chat_sessions WHERE chat_id = ?", (chat_id,))
+        await self._db.commit()
+
     # ── Focus Mode ─────────────────────────────────────────
     async def get_focus(self) -> int | None:
         cursor = await self._db.execute("SELECT chat_id FROM focus_state WHERE id = 1")

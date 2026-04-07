@@ -174,11 +174,24 @@ async def process_messages(chat_id: int, messages: list[dict]):
     except Exception:
         pass
 
+    # Session persistence — oldingi suhbat tarixini olish
+    session_history = await db.get_session_history(chat_id, limit=20)
+    conversation = []
+    for turn in session_history:
+        conversation.append({"role": turn["role"], "text": turn["text"]})
+    # Yangi xabarni qo'shish
+    conversation.append({"role": "user", "text": ctx, "media": all_media})
+
     response = await ai.chat(
         build_system_prompt(),
-        [{"role": "user", "text": ctx, "media": all_media}],
+        conversation,
         use_search=Config.USE_SEARCH,
     )
+
+    # Session ga saqlash (user xabari + AI javobi)
+    await db.save_session_turn(chat_id, "user", ctx[:3000])
+    if response:
+        await db.save_session_turn(chat_id, "model", response[:3000])
 
     if not response:
         return
@@ -345,6 +358,10 @@ async def on_message(message: types.Message):
                 f"🕐 Holat: Faol\n"
                 f"🤲 Bismillah!"
             )
+            return
+        if text == "/reset":
+            await db.clear_session(chat_id)
+            await message.reply("🔄 Suhbat tarixi tozalandi. Yangi suhbat boshlanadi.")
             return
 
     # Guruh tekshiruvi

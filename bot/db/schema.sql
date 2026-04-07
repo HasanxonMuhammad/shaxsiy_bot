@@ -80,6 +80,17 @@ CREATE TABLE IF NOT EXISTS student_notes (
     FOREIGN KEY (user_id) REFERENCES students(user_id)
 );
 
+-- AI suhbat tarixi (session persistence)
+CREATE TABLE IF NOT EXISTS chat_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_id INTEGER NOT NULL,
+    role TEXT NOT NULL,
+    text TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_chat ON chat_sessions(chat_id, created_at);
+
 -- Bot-to-bot xabarlar
 CREATE TABLE IF NOT EXISTS bot_messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
