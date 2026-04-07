@@ -266,7 +266,7 @@ class ToolHandler:
 
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=body, timeout=aiohttp.ClientTimeout(total=60)) as resp:
+                async with session.post(url, json=body, timeout=aiohttp.ClientTimeout(total=120)) as resp:
                     data = await resp.json()
 
             log.info("gen_image API javob: %s", str(data)[:500])
