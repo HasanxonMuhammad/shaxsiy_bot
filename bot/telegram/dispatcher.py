@@ -127,6 +127,41 @@ async def set_reaction(bot: Bot, chat_id: int, message_id: int, emoji: str):
         log.debug("Reaksiya qo'yishda xato: %s", e)
 
 
+async def fetch_telegram_post(url: str) -> str:
+    """Telegram post linkidan kontentni olish (t.me/channel/post_id)."""
+    try:
+        # t.me/s/ formatga o'tkazish — public preview
+        import aiohttp as _aiohttp
+        embed_url = url.replace("t.me/", "t.me/s/")
+        if "/s/s/" in embed_url:
+            embed_url = url.replace("t.me/", "t.me/s/")
+
+        async with _aiohttp.ClientSession() as session:
+            async with session.get(embed_url, timeout=_aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status != 200:
+                    return ""
+                html = await resp.text()
+
+        # HTML dan matnni ajratish
+        # <div class="tgme_widget_message_text" ...>TEXT</div>
+        text_match = re.search(
+            r'class="tgme_widget_message_text[^"]*"[^>]*>(.*?)</div>',
+            html, re.DOTALL
+        )
+        if text_match:
+            text = text_match.group(1)
+            # HTML teglarni tozalash
+            text = re.sub(r'<br\s*/?>', '\n', text)
+            text = re.sub(r'<[^>]+>', '', text)
+            text = text.strip()
+            if text:
+                log.info("Telegram post olindi: %s (%d belgi)", url, len(text))
+                return text
+    except Exception as e:
+        log.debug("Telegram post olishda xato: %s", e)
+    return ""
+
+
 async def process_messages(chat_id: int, messages: list[dict]):
     """Debouncer flush — to'plangan xabarlarni AI ga yuboradi."""
     bot: Bot = dp["bot"]
@@ -148,6 +183,14 @@ async def process_messages(chat_id: int, messages: list[dict]):
             f'name="{m["first_name"]}">{_sanitize(m["text"])}</msg>\n'
         )
     ctx += "</new_messages>\n"
+
+    # Telegram post linklarni olish
+    for m in messages:
+        tg_links = re.findall(r'https?://t\.me/\S+/\d+', m.get("text", ""))
+        for link in tg_links[:3]:  # max 3 ta link
+            post_text = await fetch_telegram_post(link)
+            if post_text:
+                ctx += f'\n<telegram_post url="{link}">{_sanitize(post_text[:2000])}</telegram_post>\n'
 
     # O'quvchi ma'lumotlarini kontekstga qo'shish
     seen_users = set()
