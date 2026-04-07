@@ -440,6 +440,9 @@ async def on_message(message: types.Message):
             await db.clear_session(chat_id)
             await message.reply("🔄 Suhbat tarixi tozalandi. Yangi suhbat boshlanadi.")
             return
+        if text == "/chatid":
+            await message.reply(f"Chat ID: <code>{chat_id}</code>", parse_mode="HTML")
+            return
 
     # Guruh tekshiruvi
     if chat_id < 0:
@@ -492,6 +495,70 @@ async def on_message(message: types.Message):
             "media": media_list,
         },
     )
+
+
+# ── Kanal monitoring ──────────────────────────────────────────
+
+@dp.channel_post(F.text)
+async def on_channel_post(message: types.Message):
+    """Kanallardan kelgan postlarni kuzatish va muhimlarini guruhga ulashish."""
+    if not Config.WATCH_CHANNELS or not Config.NEWS_TARGET_CHAT:
+        return
+
+    chat = message.chat
+    username = chat.username or ""
+    text = message.text or ""
+
+    # Bu kanal kuzatilayaptimi?
+    is_watched = any(
+        ch.replace("@", "").lower() == username.lower()
+        for ch in Config.WATCH_CHANNELS
+    )
+    if not is_watched:
+        return
+
+    log.info("Kanal post: @%s: %s", username, text[:80])
+
+    # AI bilan muhimligini aniqlash
+    if not Config.GEMINI_API_KEYS:
+        return
+
+    classify_prompt = f"""Quyidagi kanal posti muhimmi? Muhim = deadline, imtihon, konferensiya, ish o'rni, grant, muhim e'lon.
+Oddiy yangilik yoki reklama = muhim emas.
+Javob FAQAT: MUHIM yoki ODDIY
+
+Kanal: @{username}
+Post: {text[:500]}"""
+
+    response = await ai.chat(
+        "Sen yangilik klassifikatori. Faqat MUHIM yoki ODDIY deb javob ber.",
+        [{"role": "user", "text": classify_prompt}],
+    )
+
+    if response and "MUHIM" in response.upper():
+        tg_bot: Bot = dp["bot"]
+        # Guruhga ulashish — tabiiy uslubda
+        share_prompt = f"""Kanaldan muhim yangilik keldi. Buni guruhga tabiiy tilda ulash — xuddi do'sting yangilik aytgandek.
+Kanal: @{username}
+Yangilik: {text[:1000]}
+
+QISQA yoz, 2-3 jumla. Link ham ber agar bor bo'lsa. Rasmiy yozma."""
+
+        share_text = await ai.chat(
+            "Sen guruh a'zosi. Yangilikni tabiiy tilda ulash.",
+            [{"role": "user", "text": share_prompt}],
+        )
+
+        if share_text and "[NO_ACTION]" not in share_text:
+            try:
+                await tg_bot.send_message(
+                    Config.NEWS_TARGET_CHAT,
+                    share_text.strip(),
+                    parse_mode="HTML",
+                )
+                log.info("Yangilik guruhga ulashildi: @%s", username)
+            except Exception as e:
+                log.error("Yangilik ulashishda xato: %s", e)
 
 
 # ── Background tasks ──────────────────────────────────────────

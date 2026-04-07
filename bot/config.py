@@ -33,6 +33,13 @@ class Config:
     SYSTEM_PROMPT_FILE: str = os.getenv("SYSTEM_PROMPT_FILE", "")
     DATA_DIR: Path = Path(os.getenv("DATA_DIR", "data"))
     USE_SEARCH: bool = os.getenv("USE_SEARCH", "false").lower() == "true"
+    # Kanal monitoring — kanallardan muhim yangilikni guruhga ulashish
+    WATCH_CHANNELS: list[str] = [
+        c.strip()
+        for c in os.getenv("WATCH_CHANNELS", "").split(",")
+        if c.strip()
+    ]
+    NEWS_TARGET_CHAT: int = int(os.getenv("NEWS_TARGET_CHAT", "0"))
     DEBOUNCE_SEC: float = float(os.getenv("DEBOUNCE_SEC", "1.0"))
     MAX_MESSAGES_PER_MIN: int = int(os.getenv("MAX_MESSAGES_PER_MIN", "20"))
 
