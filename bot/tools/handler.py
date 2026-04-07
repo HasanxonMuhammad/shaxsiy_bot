@@ -7,6 +7,7 @@ import aiohttp
 
 from bot.db import Database
 from bot.memory import MemoryStore
+from bot.tools.lugat import Lugat
 
 log = logging.getLogger(__name__)
 
@@ -41,6 +42,10 @@ class ToolHandler:
         self.db = db
         self.memory = memory
         self._stats: dict[str, dict] = {}  # tool_name → {calls, errors, avg_ms}
+        # Lug'at bazasi
+        from bot.config import Config
+        lugat_path = Config.DATA_DIR / "universal_lugat.db"
+        self.lugat = Lugat(lugat_path) if lugat_path.exists() else None
 
     async def execute(self, tool: dict) -> str:
         """SDK pattern: pre-validation → execute → post-logging."""
@@ -106,6 +111,8 @@ class ToolHandler:
                 return await self._unmute_chat(params)
             case "send_voice":
                 return await self._send_voice(params)
+            case "lugat":
+                return self._lugat_search(params)
             case _:
                 return f"Noma'lum tool: {name}"
 
@@ -293,6 +300,15 @@ class ToolHandler:
         except Exception as e:
             log.error("gen_image xatosi: %s", e)
             return f"Rasm yaratishda xato: {e}"
+
+    def _lugat_search(self, p: dict) -> str:
+        """Arab-O'zbek lug'atdan qidirish."""
+        if not self.lugat:
+            return "Lug'at bazasi mavjud emas"
+        query = p.get("query", "")
+        if not query:
+            return "Qidiruv so'zi kerak"
+        return self.lugat.search(query, limit=p.get("limit", 5))
 
     async def _mute_chat(self, p: dict) -> str:
         chat_id = p.get("chat_id", 0)
