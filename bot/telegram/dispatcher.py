@@ -281,27 +281,50 @@ async def process_messages(chat_id: int, messages: list[dict]):
     if tool_call:
         result = await tools.execute(tool_call)
         log.info("Tool %s: %s", tool_call["name"], result[:100])
-        # Rasm/Voice tool natijasini yuborish
         import base64 as b64
         from aiogram.types import BufferedInputFile
         last_msg_id = messages[-1]["message_id"]
 
         if result.startswith("IMAGE:"):
-            parts = result.split(":", 2)
-            img_bytes = b64.b64decode(parts[2])
-            photo = BufferedInputFile(img_bytes, filename="image.png")
-            await bot.send_photo(chat_id, photo, reply_to_message_id=last_msg_id)
+            try:
+                parts = result.split(":", 2)
+                img_bytes = b64.b64decode(parts[2])
+                photo = BufferedInputFile(img_bytes, filename="image.png")
+                await bot.send_photo(chat_id, photo, reply_to_message_id=last_msg_id,
+                                     caption=reply_text[:1024] if reply_text else None)
+            except Exception as e:
+                log.error("Rasm yuborishda xato: %s", e)
+                await bot.send_message(chat_id, "Rasm yaratdim lekin yuborishda xato chiqdi 😅",
+                                       reply_to_message_id=last_msg_id)
         elif result.startswith("VOICE:"):
-            audio_bytes = b64.b64decode(result[6:])
-            voice = BufferedInputFile(audio_bytes, filename="voice.mp3")
-            await bot.send_voice(chat_id, voice, reply_to_message_id=last_msg_id)
-        elif reply_text:
-            last_msg_id = messages[-1]["message_id"]
-            for chunk in _split(reply_text, 4000):
-                try:
-                    await bot.send_message(chat_id, chunk, reply_to_message_id=last_msg_id, parse_mode="HTML")
-                except Exception:
-                    await bot.send_message(chat_id, chunk, reply_to_message_id=last_msg_id)
+            try:
+                audio_bytes = b64.b64decode(result[6:])
+                voice = BufferedInputFile(audio_bytes, filename="voice.ogg")
+                await bot.send_voice(chat_id, voice, reply_to_message_id=last_msg_id)
+            except Exception as e:
+                log.error("Ovoz yuborishda xato: %s", e)
+                await bot.send_message(chat_id, "Ovozli xabar yuborishda xato chiqdi",
+                                       reply_to_message_id=last_msg_id)
+        else:
+            # Tool natijasini AI ga qayta berib, foydalanuvchiga javob yozdirish
+            tool_response = await ai.chat(
+                build_system_prompt(),
+                [
+                    {"role": "user", "text": messages[-1].get("text", "")},
+                    {"role": "model", "text": response},
+                    {"role": "user", "text": f"Tool natijasi: {result[:1000]}. Shu natijaga qarab foydalanuvchiga javob ber."},
+                ],
+                chat_id=chat_id,
+            )
+            final_text = reply_text or tool_response or result
+            if final_text and "[NO_ACTION]" not in final_text:
+                final_text = re.sub(r"\[TOOL:\w+\]\{.*?\}", "", final_text, flags=re.DOTALL).strip()
+                final_text = re.sub(r"\[REACT:[^\]]+\]", "", final_text).strip()
+                for chunk in _split(final_text, 4000):
+                    try:
+                        await bot.send_message(chat_id, chunk, reply_to_message_id=last_msg_id, parse_mode="HTML")
+                    except Exception:
+                        await bot.send_message(chat_id, chunk, reply_to_message_id=last_msg_id)
     elif reply_text:
         # Guruhda reply qilib javob berish
         last_msg_id = messages[-1]["message_id"]
