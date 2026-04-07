@@ -308,7 +308,7 @@ class ToolHandler:
         return f"🔊 Chat qayta yoqildi"
 
     async def _send_voice(self, p: dict) -> str:
-        """Gemini TTS orqali ovozli xabar yaratish."""
+        """Gemini TTS modeli orqali ovozli xabar yaratish."""
         text = p.get("text", "")
         lang = p.get("lang", "uz")
         if not text:
@@ -318,41 +318,60 @@ class ToolHandler:
         if not Config.GEMINI_API_KEYS:
             return "API kalit yo'q"
 
+        # Til kodini to'liq nomga aylantirish
+        lang_map = {
+            "uz": "Uzbek", "ar": "Arabic", "en": "English",
+            "tr": "Turkish", "fa": "Persian", "ja": "Japanese",
+            "ko": "Korean", "zh": "Chinese", "ru": "Russian",
+        }
+        lang_name = lang_map.get(lang, lang)
+
         try:
-            # Gemini multimodal TTS — barcha tillarni qo'llab-quvvatlaydi
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={Config.GEMINI_API_KEYS[0]}"
+            # Gemini TTS — maxsus TTS modeli
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key={Config.GEMINI_API_KEYS[0]}"
             body = {
-                "contents": [{"parts": [{"text": f"Read this text aloud in {lang} language, naturally and clearly: {text[:500]}"}]}],
-                "generationConfig": {"responseModalities": ["AUDIO"]},
+                "contents": [{"parts": [{"text": f"{text[:500]}"}]}],
+                "generationConfig": {
+                    "responseModalities": ["AUDIO"],
+                    "speechConfig": {
+                        "voiceConfig": {
+                            "prebuiltVoiceConfig": {
+                                "voiceName": "Kore"
+                            }
+                        }
+                    }
+                },
             }
 
             async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=body) as resp:
+                async with session.post(url, json=body, timeout=aiohttp.ClientTimeout(total=60)) as resp:
                     data = await resp.json()
 
-                if "candidates" in data:
-                    for part in data["candidates"][0]["content"]["parts"]:
-                        if "inlineData" in part:
-                            audio_b64 = part["inlineData"]["data"]
-                            return f"VOICE:{audio_b64}"
+            log.info("TTS API javob: %s", str(data)[:300])
 
-                # Gemini TTS ishlamasa — Google Translate fallback
-                log.warning("Gemini TTS ishlamadi, Google Translate fallback")
-                from urllib.parse import quote
-                encoded = quote(text[:200])
-                headers = {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                    "Referer": "https://translate.google.com/",
-                }
-                tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&q={encoded}&tl={lang}&client=tw-ob&ttsspeed=1"
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(tts_url, headers=headers) as resp:
-                        if resp.status == 200:
-                            audio_data = await resp.read()
-                            return f"VOICE:{base64.b64encode(audio_data).decode()}"
+            if "candidates" in data:
+                for part in data["candidates"][0]["content"]["parts"]:
+                    if "inlineData" in part:
+                        audio_b64 = part["inlineData"]["data"]
+                        return f"VOICE:{audio_b64}"
 
-                error = data.get("error", {}).get("message", "Noma'lum xato")
-                return f"TTS xatosi: {error}"
+            # Fallback — Google Translate TTS
+            log.warning("Gemini TTS ishlamadi, Google Translate fallback")
+            from urllib.parse import quote
+            encoded = quote(text[:200])
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Referer": "https://translate.google.com/",
+            }
+            tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&q={encoded}&tl={lang}&client=tw-ob&ttsspeed=1"
+            async with aiohttp.ClientSession() as session:
+                async with session.get(tts_url, headers=headers) as resp:
+                    if resp.status == 200:
+                        audio_data = await resp.read()
+                        return f"VOICE:{base64.b64encode(audio_data).decode()}"
+
+            error = data.get("error", {}).get("message", "Noma'lum xato")
+            return f"TTS xatosi: {error}"
         except Exception as e:
             log.error("TTS xatosi: %s", e)
             return f"TTS xatosi: {e}"
