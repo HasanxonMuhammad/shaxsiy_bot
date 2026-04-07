@@ -1,5 +1,8 @@
+"""Gemini AI Engine — SDK pattern asosida retry, error handling, context management."""
 import asyncio
 import logging
+import time
+from dataclasses import dataclass, field
 
 import aiohttp
 import google.generativeai as genai
@@ -8,6 +11,54 @@ log = logging.getLogger(__name__)
 
 API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
 
+# SDK patterndan: retry konstantalari
+MAX_RETRIES = 3
+BASE_DELAY_MS = 500
+
+# Xato turlari (SDK patterndan — markazlashtirilgan)
+RATE_LIMIT_MARKERS = ["429", "quota", "rate limit", "resource_exhausted"]
+AUTH_ERROR_MARKERS = ["api_key_invalid", "api key expired", "permission_denied"]
+TRANSIENT_MARKERS = ["503", "502", "timeout", "connection"]
+
+
+def _classify_error(error_str: str) -> str:
+    """Xato turini aniqlash (SDK errorUtils patterndan)."""
+    lower = error_str.lower()
+    for marker in RATE_LIMIT_MARKERS:
+        if marker in lower:
+            return "rate_limit"
+    for marker in AUTH_ERROR_MARKERS:
+        if marker in lower:
+            return "auth_error"
+    for marker in TRANSIENT_MARKERS:
+        if marker in lower:
+            return "transient"
+    return "unknown"
+
+
+@dataclass
+class EngineStats:
+    """So'rov statistikasi."""
+    total_requests: int = 0
+    successful: int = 0
+    rate_limited: int = 0
+    errors: int = 0
+    total_tokens_approx: int = 0
+    last_request_time: float = 0
+    avg_response_ms: float = 0
+    _response_times: list = field(default_factory=list)
+
+    def record(self, duration_ms: float, success: bool, tokens: int = 0):
+        self.total_requests += 1
+        if success:
+            self.successful += 1
+            self.total_tokens_approx += tokens
+        self._response_times.append(duration_ms)
+        if len(self._response_times) > 100:
+            self._response_times = self._response_times[-50:]
+        self.avg_response_ms = sum(self._response_times) / len(self._response_times)
+        self.last_request_time = time.time()
+
 
 class GeminiEngine:
     def __init__(self, api_keys: list[str], model: str = "gemini-2.5-flash"):
@@ -15,6 +66,7 @@ class GeminiEngine:
         self._model_name = model
         self._current_key = 0
         self._http: aiohttp.ClientSession | None = None
+        self.stats = EngineStats()
 
     def _rotate_key(self):
         old = self._current_key
@@ -23,13 +75,14 @@ class GeminiEngine:
 
     async def _get_http(self):
         if self._http is None or self._http.closed:
-            self._http = aiohttp.ClientSession()
+            self._http = aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=60)
+            )
         return self._http
 
     async def chat(self, system_prompt: str, messages: list[dict], use_search: bool = False) -> str:
         has_media = any(m.get("media") for m in messages)
 
-        # Media bor yoki search kerak — mos usulni tanlaymiz
         if use_search:
             return await self._chat_rest(system_prompt, messages, use_search=True)
         elif has_media:
@@ -38,7 +91,7 @@ class GeminiEngine:
             return await self._chat_rest(system_prompt, messages, use_search=False)
 
     async def _chat_rest(self, system_prompt: str, messages: list[dict], use_search: bool = False) -> str:
-        """REST API orqali — google_search qo'llab-quvvatlaydi."""
+        """REST API — google_search + retry logic."""
         contents = []
         for msg in messages:
             parts = []
@@ -57,88 +110,111 @@ class GeminiEngine:
         total_keys = len(self._keys)
         http = await self._get_http()
 
-        for attempt in range(total_keys * 2):
+        for attempt in range(total_keys * MAX_RETRIES):
             url = API_URL.format(model=self._model_name, key=self._keys[self._current_key])
+            start = time.time()
             try:
-                log.info("Gemini REST so'rov (kalit #%d, search=%s)...", self._current_key + 1, use_search)
+                log.info("Gemini REST (kalit #%d, search=%s, urinish %d)...",
+                         self._current_key + 1, use_search, attempt + 1)
                 async with http.post(url, json=body) as resp:
                     data = await resp.json()
 
+                duration_ms = (time.time() - start) * 1000
+
                 if "candidates" in data:
-                    parts = []
-                    for p in data["candidates"][0]["content"]["parts"]:
-                        if "text" in p:
-                            parts.append(p["text"])
+                    parts = [p["text"] for p in data["candidates"][0]["content"]["parts"] if "text" in p]
                     text = "\n".join(parts)
-                    log.info("Gemini javob olindi: %d belgi", len(text))
+                    self.stats.record(duration_ms, True, len(text))
+                    log.info("Gemini javob: %d belgi, %.0fms", len(text), duration_ms)
                     return text
 
                 error_msg = data.get("error", {}).get("message", "")
-                if "429" in str(data.get("error", {}).get("code", "")) or "quota" in error_msg.lower():
-                    log.warning("Rate limit — keyingi kalit")
+                error_type = _classify_error(error_msg)
+                self.stats.record(duration_ms, False)
+
+                if error_type == "rate_limit":
+                    self.stats.rate_limited += 1
                     self._rotate_key()
-                    if (attempt + 1) % total_keys == 0:
-                        await asyncio.sleep(30)
+                    # SDK pattern: exponential backoff
+                    delay = (BASE_DELAY_MS / 1000) * (2 ** (attempt % MAX_RETRIES))
+                    log.warning("Rate limit — %.1fs kutish", delay)
+                    await asyncio.sleep(delay)
+                elif error_type == "auth_error":
+                    log.error("Auth xatosi — kalit yaroqsiz: %s", error_msg[:100])
+                    self._rotate_key()
+                elif error_type == "transient":
+                    delay = (BASE_DELAY_MS / 1000) * (2 ** attempt)
+                    log.warning("Vaqtinchalik xato — %.1fs kutish", delay)
+                    await asyncio.sleep(min(delay, 30))
                 else:
-                    log.error("Gemini REST xatosi: %s", error_msg[:200])
+                    log.error("Gemini xatosi: %s", error_msg[:200])
+                    self.stats.errors += 1
                     return ""
 
+            except asyncio.TimeoutError:
+                log.warning("Gemini timeout — qayta urinish")
+                await asyncio.sleep(2)
             except Exception as e:
-                log.error("Gemini REST xatosi: %s", str(e)[:200])
+                log.error("Gemini xatosi: %s", str(e)[:200])
+                self.stats.errors += 1
                 return ""
 
+        log.error("Barcha urinishlar muvaffaqiyatsiz (%d)", total_keys * MAX_RETRIES)
         return ""
 
     async def _chat_sdk(self, system_prompt: str, messages: list[dict]) -> str:
-        """SDK orqali — media (rasm/audio) qo'llab-quvvatlaydi."""
+        """SDK — media (rasm/audio) + retry."""
         contents = []
         for msg in messages:
             parts = []
             if msg.get("text"):
                 parts.append(msg["text"])
             for media in msg.get("media", []):
-                parts.append({
-                    "mime_type": media["mime"],
-                    "data": media["data"],
-                })
-                log.info("Media qo'shildi: %s, %d bayt", media["mime"], len(media["data"]))
+                parts.append({"mime_type": media["mime"], "data": media["data"]})
+                log.info("Media: %s, %d bayt", media["mime"], len(media["data"]))
             contents.append({"role": msg["role"], "parts": parts})
 
         total_keys = len(self._keys)
 
-        for attempt in range(total_keys * 2):
+        for attempt in range(total_keys * MAX_RETRIES):
+            start = time.time()
             try:
                 genai.configure(api_key=self._keys[self._current_key])
                 model = genai.GenerativeModel(
                     model_name=self._model_name,
                     system_instruction=system_prompt,
                     generation_config=genai.GenerationConfig(
-                        temperature=0.9,
-                        max_output_tokens=4096,
+                        temperature=0.9, max_output_tokens=4096,
                     ),
                 )
-                log.info("Gemini SDK so'rov (kalit #%d)...", self._current_key + 1)
+                log.info("Gemini SDK (kalit #%d, urinish %d)...", self._current_key + 1, attempt + 1)
                 response = await model.generate_content_async(contents=contents)
+                duration_ms = (time.time() - start) * 1000
 
                 if response and response.candidates:
-                    result = []
-                    for part in response.candidates[0].content.parts:
-                        if hasattr(part, "text") and part.text:
-                            result.append(part.text)
+                    result = [p.text for p in response.candidates[0].content.parts if hasattr(p, "text") and p.text]
                     text = "\n".join(result)
-                    log.info("Gemini javob olindi: %d belgi", len(text))
+                    self.stats.record(duration_ms, True, len(text))
+                    log.info("Gemini javob: %d belgi, %.0fms", len(text), duration_ms)
                     return text
-                else:
-                    return ""
+                return ""
 
             except Exception as e:
+                duration_ms = (time.time() - start) * 1000
                 error_str = str(e)
-                log.error("Gemini SDK xatosi (kalit #%d): %s", self._current_key + 1, error_str[:200])
-                if "429" in error_str or "quota" in error_str.lower():
+                error_type = _classify_error(error_str)
+                self.stats.record(duration_ms, False)
+                log.error("Gemini SDK xatosi: %s → %s", error_type, error_str[:150])
+
+                if error_type == "rate_limit":
+                    self.stats.rate_limited += 1
                     self._rotate_key()
-                    if (attempt + 1) % total_keys == 0:
-                        await asyncio.sleep(30)
+                    delay = (BASE_DELAY_MS / 1000) * (2 ** (attempt % MAX_RETRIES))
+                    await asyncio.sleep(delay)
+                elif error_type == "transient":
+                    await asyncio.sleep(2)
                 else:
+                    self.stats.errors += 1
                     return ""
 
         return ""

@@ -127,6 +127,27 @@ async def set_reaction(bot: Bot, chat_id: int, message_id: int, emoji: str):
         log.debug("Reaksiya qo'yishda xato: %s", e)
 
 
+async def fetch_url_content(url: str) -> str:
+    """Har qanday URL dan matn kontentini olish."""
+    try:
+        import aiohttp as _aiohttp
+        async with _aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=_aiohttp.ClientTimeout(total=10),
+                                   headers={"User-Agent": "Mozilla/5.0"}) as resp:
+                if resp.status != 200:
+                    return ""
+                html = await resp.text()
+                # HTML teglarni tozalash
+                text = re.sub(r'<script[^>]*>.*?</script>', '', html, flags=re.DOTALL)
+                text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.DOTALL)
+                text = re.sub(r'<[^>]+>', ' ', text)
+                text = re.sub(r'\s+', ' ', text).strip()
+                return text[:3000]
+    except Exception as e:
+        log.debug("URL olishda xato: %s", e)
+    return ""
+
+
 async def fetch_telegram_post(url: str) -> str:
     """Telegram post linkidan kontentni olish (t.me/channel/post_id)."""
     try:
@@ -184,13 +205,21 @@ async def process_messages(chat_id: int, messages: list[dict]):
         )
     ctx += "</new_messages>\n"
 
-    # Telegram post linklarni olish
+    # Xabardagi linklarni olish
     for m in messages:
-        tg_links = re.findall(r'https?://t\.me/\S+/\d+', m.get("text", ""))
-        for link in tg_links[:3]:  # max 3 ta link
+        text_content = m.get("text", "")
+        # Telegram post linklari
+        tg_links = re.findall(r'https?://t\.me/\S+/\d+', text_content)
+        for link in tg_links[:3]:
             post_text = await fetch_telegram_post(link)
             if post_text:
                 ctx += f'\n<telegram_post url="{link}">{_sanitize(post_text[:2000])}</telegram_post>\n'
+        # Oddiy URL lar (t.me dan tashqari)
+        other_links = re.findall(r'https?://(?!t\.me)\S+', text_content)
+        for link in other_links[:2]:
+            page_text = await fetch_url_content(link)
+            if page_text:
+                ctx += f'\n<web_page url="{link}">{_sanitize(page_text[:1500])}</web_page>\n'
 
     # O'quvchi ma'lumotlarini kontekstga qo'shish
     seen_users = set()
@@ -396,10 +425,15 @@ async def on_message(message: types.Message):
             await message.reply("✅ Bot ishlayapti! Alhamdulillah 🤲")
             return
         if text == "/stats":
+            s = ai.stats
+            students = await db.list_students()
             await message.reply(
-                f"📊 Bot: {Config.BOT_NAME}\n"
-                f"🕐 Holat: Faol\n"
-                f"🤲 Bismillah!"
+                f"📊 <b>{Config.BOT_NAME}</b>\n"
+                f"🤖 So'rovlar: {s.total_requests} (✅{s.successful} ❌{s.errors} ⏳{s.rate_limited})\n"
+                f"⚡ O'rtacha javob: {s.avg_response_ms:.0f}ms\n"
+                f"👥 O'quvchilar: {len(students)}\n"
+                f"📝 Tokenlar: ~{s.total_tokens_approx:,}",
+                parse_mode="HTML",
             )
             return
         if text == "/reset":

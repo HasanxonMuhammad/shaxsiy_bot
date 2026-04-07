@@ -40,54 +40,82 @@ class ToolHandler:
     def __init__(self, db: Database, memory: MemoryStore):
         self.db = db
         self.memory = memory
+        self._stats: dict[str, dict] = {}  # tool_name → {calls, errors, avg_ms}
 
     async def execute(self, tool: dict) -> str:
+        """SDK pattern: pre-validation → execute → post-logging."""
+        import time
         name = tool["name"]
         params = tool.get("params", {})
+
+        # Pre-hook: parametr validatsiya
+        if not isinstance(params, dict):
+            return f"Xato: params dict bo'lishi kerak, {type(params).__name__} berildi"
+
+        start = time.time()
+        log.info("Tool chaqirildi: %s(%s)", name, str(params)[:100])
         try:
-            match name:
-                case "search_messages":
-                    return await self._search_messages(params)
-                case "create_memory":
-                    return self._create_memory(params)
-                case "read_memory":
-                    return self._read_memory(params)
-                case "list_memories":
-                    return self._list_memories()
-                case "search_memories":
-                    return self._search_memories(params)
-                case "set_reminder":
-                    return await self._set_reminder(params)
-                case "get_chat_history":
-                    return await self._get_history(params)
-                # ── O'quvchi toollar ──────────────────────────
-                case "get_student":
-                    return await self._get_student(params)
-                case "save_lesson":
-                    return await self._save_lesson(params)
-                case "list_students":
-                    return await self._list_students()
-                case "student_history":
-                    return await self._student_history(params)
-                case "add_note":
-                    return await self._add_note(params)
-                case "get_notes":
-                    return await self._get_notes(params)
-                case "update_student":
-                    return await self._update_student(params)
-                case "gen_image":
-                    return await self._gen_image(params)
-                case "mute_chat":
-                    return await self._mute_chat(params)
-                case "unmute_chat":
-                    return await self._unmute_chat(params)
-                case "send_voice":
-                    return await self._send_voice(params)
-                case _:
-                    return f"Noma'lum tool: {name}"
+            result = await self._dispatch(name, params)
         except Exception as e:
-            log.error("Tool %s xatosi: %s", name, e)
+            duration_ms = (time.time() - start) * 1000
+            log.error("Tool %s xatosi (%.0fms): %s", name, duration_ms, e)
+            self._record_stat(name, duration_ms, error=True)
             return f"Xato: {e}"
+
+        # Post-hook: statistika
+        duration_ms = (time.time() - start) * 1000
+        log.info("Tool %s bajarildi: %.0fms", name, duration_ms)
+        self._record_stat(name, duration_ms)
+        return result
+
+    async def _dispatch(self, name: str, params: dict) -> str:
+        match name:
+            case "search_messages":
+                return await self._search_messages(params)
+            case "create_memory":
+                return self._create_memory(params)
+            case "read_memory":
+                return self._read_memory(params)
+            case "list_memories":
+                return self._list_memories()
+            case "search_memories":
+                return self._search_memories(params)
+            case "set_reminder":
+                return await self._set_reminder(params)
+            case "get_chat_history":
+                return await self._get_history(params)
+            case "get_student":
+                return await self._get_student(params)
+            case "save_lesson":
+                return await self._save_lesson(params)
+            case "list_students":
+                return await self._list_students()
+            case "student_history":
+                return await self._student_history(params)
+            case "add_note":
+                return await self._add_note(params)
+            case "get_notes":
+                return await self._get_notes(params)
+            case "update_student":
+                return await self._update_student(params)
+            case "gen_image":
+                return await self._gen_image(params)
+            case "mute_chat":
+                return await self._mute_chat(params)
+            case "unmute_chat":
+                return await self._unmute_chat(params)
+            case "send_voice":
+                return await self._send_voice(params)
+            case _:
+                return f"Noma'lum tool: {name}"
+
+    def _record_stat(self, name: str, duration_ms: float, error: bool = False):
+        if name not in self._stats:
+            self._stats[name] = {"calls": 0, "errors": 0, "total_ms": 0}
+        self._stats[name]["calls"] += 1
+        self._stats[name]["total_ms"] += duration_ms
+        if error:
+            self._stats[name]["errors"] += 1
 
     # ── Xabar toollar ─────────────────────────────────────────
     async def _search_messages(self, p: dict) -> str:
