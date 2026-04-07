@@ -299,8 +299,8 @@ async def process_messages(chat_id: int, messages: list[dict]):
         elif result.startswith("VOICE:"):
             try:
                 audio_bytes = b64.b64decode(result[6:])
-                voice = BufferedInputFile(audio_bytes, filename="voice.ogg")
-                await bot.send_voice(chat_id, voice, reply_to_message_id=last_msg_id)
+                voice = BufferedInputFile(audio_bytes, filename="voice.wav")
+                await bot.send_audio(chat_id, voice, reply_to_message_id=last_msg_id)
             except Exception as e:
                 log.error("Ovoz yuborishda xato: %s", e)
                 await bot.send_message(chat_id, "Ovozli xabar yuborishda xato chiqdi",

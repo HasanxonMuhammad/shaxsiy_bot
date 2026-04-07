@@ -352,8 +352,28 @@ class ToolHandler:
             if "candidates" in data:
                 for part in data["candidates"][0]["content"]["parts"]:
                     if "inlineData" in part:
-                        audio_b64 = part["inlineData"]["data"]
-                        return f"VOICE:{audio_b64}"
+                        raw_b64 = part["inlineData"]["data"]
+                        pcm_data = base64.b64decode(raw_b64)
+                        # PCM → WAV konvertatsiya (Telegram uchun)
+                        import struct, io
+                        wav_buf = io.BytesIO()
+                        # WAV header yozish
+                        num_channels = 1
+                        sample_rate = 24000
+                        bits_per_sample = 16
+                        data_size = len(pcm_data)
+                        wav_buf.write(b'RIFF')
+                        wav_buf.write(struct.pack('<I', 36 + data_size))
+                        wav_buf.write(b'WAVE')
+                        wav_buf.write(b'fmt ')
+                        wav_buf.write(struct.pack('<IHHIIHH', 16, 1, num_channels, sample_rate,
+                                                  sample_rate * num_channels * bits_per_sample // 8,
+                                                  num_channels * bits_per_sample // 8, bits_per_sample))
+                        wav_buf.write(b'data')
+                        wav_buf.write(struct.pack('<I', data_size))
+                        wav_buf.write(pcm_data)
+                        wav_bytes = wav_buf.getvalue()
+                        return f"VOICE:{base64.b64encode(wav_bytes).decode()}"
 
             # Fallback — Google Translate TTS
             log.warning("Gemini TTS ishlamadi, Google Translate fallback")
