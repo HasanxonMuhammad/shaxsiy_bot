@@ -256,61 +256,31 @@ class ToolHandler:
         if not Config.GEMINI_API_KEYS:
             return "API kalit yo'q"
 
-        # Imagen 3 — Google'ning eng yaxshi rasm yaratish modeli
-        models = [
-            "imagen-3.0-generate-002",
-            "imagen-3.0-generate-001",
-        ]
-
-        for model in models:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:predict?key={Config.GEMINI_API_KEYS[0]}"
-            body = {
-                "instances": [{"prompt": prompt}],
-                "parameters": {
-                    "sampleCount": 1,
-                    "aspectRatio": "1:1",
-                },
-            }
-
-            try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(url, json=body) as resp:
-                        data = await resp.json()
-
-                if "predictions" in data:
-                    img_b64 = data["predictions"][0]["bytesBase64Encoded"]
-                    mime = data["predictions"][0].get("mimeType", "image/png")
-                    return f"IMAGE:{mime}:{img_b64}"
-
-                error = data.get("error", {}).get("message", "")
-                log.warning("gen_image %s xato: %s", model, error)
-                if "not found" not in error.lower():
-                    return f"Rasm yaratishda xato: {error}"
-            except Exception as e:
-                log.error("gen_image %s xatosi: %s", model, e)
-
-        # Fallback: Gemini multimodal
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key={Config.GEMINI_API_KEYS[0]}"
+        # Gemini image generation — generateContent bilan
+        model = "gemini-2.5-flash-image"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={Config.GEMINI_API_KEYS[0]}"
         body = {
             "contents": [{"parts": [{"text": f"Generate an image: {prompt}"}]}],
             "generationConfig": {"responseModalities": ["TEXT", "IMAGE"]},
         }
+
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=body) as resp:
+                async with session.post(url, json=body, timeout=aiohttp.ClientTimeout(total=60)) as resp:
                     data = await resp.json()
 
             if "candidates" in data:
                 for part in data["candidates"][0]["content"]["parts"]:
                     if "inlineData" in part:
-                        img_data = base64.b64decode(part["inlineData"]["data"])
+                        img_b64 = part["inlineData"]["data"]
                         mime = part["inlineData"].get("mimeType", "image/png")
-                        return f"IMAGE:{mime}:{base64.b64encode(img_data).decode()}"
+                        return f"IMAGE:{mime}:{img_b64}"
 
             error = data.get("error", {}).get("message", "Noma'lum xato")
+            log.error("gen_image xato: %s", error)
             return f"Rasm yaratishda xato: {error}"
         except Exception as e:
-            log.error("gen_image fallback xatosi: %s", e)
+            log.error("gen_image xatosi: %s", e)
             return f"Rasm yaratishda xato: {e}"
 
     async def _mute_chat(self, p: dict) -> str:
