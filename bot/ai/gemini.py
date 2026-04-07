@@ -83,10 +83,11 @@ class GeminiEngine:
     async def chat(self, system_prompt: str, messages: list[dict], use_search: bool = False) -> str:
         has_media = any(m.get("media") for m in messages)
 
-        if use_search:
-            return await self._chat_rest(system_prompt, messages, use_search=True)
-        elif has_media:
+        if has_media:
+            # Media bor — SDK ishlatish (rasm/audio tahlili)
             return await self._chat_sdk(system_prompt, messages)
+        elif use_search:
+            return await self._chat_rest(system_prompt, messages, use_search=True)
         else:
             return await self._chat_rest(system_prompt, messages, use_search=False)
 
