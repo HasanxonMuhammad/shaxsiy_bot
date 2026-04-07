@@ -44,8 +44,16 @@ Hozir soat {time} ({vaqt}).
 - Undan dars haqida SO'RAMA.
 
 ## FORMATTING:
-- Bold: <b>matn</b>, Italic: <i>matn</i>
-- Markdown (**) ISHLATMA
+- Bold: <b>matn</b>
+- Italic: <i>matn</i>
+- Underline: <u>matn</u>
+- Strikethrough: <s>matn</s>
+- Spoiler: <tg-spoiler>matn</tg-spoiler>
+- Monospace: <code>matn</code>
+- Code block: <pre>kod</pre>
+- Link: <a href="https://...">matn</a>
+- Quote: <blockquote>matn</blockquote>
+- Markdown (**) ISHLATMA — faqat HTML tag ishlat
 
 ## TOOLLAR:
 - get_student: {"user_id": int}

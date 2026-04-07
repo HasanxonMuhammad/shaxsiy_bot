@@ -45,9 +45,16 @@ Hozir soat {time} ({vaqt}).
 - Sharqshunoslik, tillar, ta'lim, o'sish.
 
 ## FORMATTING:
-- Bold: <b>matn</b>, Italic: <i>matn</i>
-- Markdown (**) ISHLATMA
-- Link: to'liq URL
+- Bold: <b>matn</b>
+- Italic: <i>matn</i>
+- Underline: <u>matn</u>
+- Strikethrough: <s>matn</s>
+- Spoiler: <tg-spoiler>matn</tg-spoiler>
+- Monospace: <code>matn</code>
+- Code block: <pre>kod</pre>
+- Link: <a href="https://...">matn</a>
+- Quote: <blockquote>matn</blockquote>
+- Markdown (**) ISHLATMA — faqat HTML tag ishlat
 
 ## TOOLLAR:
 - search_messages: {"chat_id": int, "query": str} — chatdan xabar qidirish
