@@ -269,16 +269,27 @@ class ToolHandler:
                 async with session.post(url, json=body, timeout=aiohttp.ClientTimeout(total=60)) as resp:
                     data = await resp.json()
 
+            log.info("gen_image API javob: %s", str(data)[:500])
+
             if "candidates" in data:
-                for part in data["candidates"][0]["content"]["parts"]:
+                candidate = data["candidates"][0]
+                # Xavfsizlik filtri tekshiruvi
+                if candidate.get("finishReason") == "IMAGE_SAFETY":
+                    return "Rasm yaratib bo'lmadi — xavfsizlik filtri"
+                parts = candidate.get("content", {}).get("parts", [])
+                for part in parts:
                     if "inlineData" in part:
                         img_b64 = part["inlineData"]["data"]
                         mime = part["inlineData"].get("mimeType", "image/png")
                         return f"IMAGE:{mime}:{img_b64}"
+                # Rasm yo'q — faqat matn qaytgan
+                text_parts = [p.get("text", "") for p in parts if "text" in p]
+                if text_parts:
+                    return f"Rasm yaratilmadi. AI javobi: {' '.join(text_parts)[:200]}"
 
-            error = data.get("error", {}).get("message", "Noma'lum xato")
-            log.error("gen_image xato: %s", error)
-            return f"Rasm yaratishda xato: {error}"
+            error = data.get("error", {}).get("message", "")
+            log.error("gen_image xato: %s | to'liq: %s", error, str(data)[:300])
+            return f"Rasm yaratishda xato: {error or 'API javob bermadi'}"
         except Exception as e:
             log.error("gen_image xatosi: %s", e)
             return f"Rasm yaratishda xato: {e}"
