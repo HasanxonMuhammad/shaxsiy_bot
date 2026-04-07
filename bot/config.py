@@ -32,6 +32,7 @@ class Config:
     ]
     SYSTEM_PROMPT_FILE: str = os.getenv("SYSTEM_PROMPT_FILE", "")
     DATA_DIR: Path = Path(os.getenv("DATA_DIR", "data"))
+    USE_SEARCH: bool = os.getenv("USE_SEARCH", "false").lower() == "true"
     DEBOUNCE_SEC: float = float(os.getenv("DEBOUNCE_SEC", "1.0"))
     MAX_MESSAGES_PER_MIN: int = int(os.getenv("MAX_MESSAGES_PER_MIN", "20"))
 

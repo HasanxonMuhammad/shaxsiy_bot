@@ -168,6 +168,7 @@ async def process_messages(chat_id: int, messages: list[dict]):
     response = await ai.chat(
         build_system_prompt(),
         [{"role": "user", "text": ctx, "media": all_media}],
+        use_search=Config.USE_SEARCH,
     )
 
     if not response:
