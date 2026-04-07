@@ -1,6 +1,9 @@
+import base64
 import json
 import logging
 import re
+
+import aiohttp
 
 from bot.db import Database
 from bot.memory import MemoryStore
@@ -72,6 +75,14 @@ class ToolHandler:
                     return await self._get_notes(params)
                 case "update_student":
                     return await self._update_student(params)
+                case "gen_image":
+                    return await self._gen_image(params)
+                case "mute_chat":
+                    return await self._mute_chat(params)
+                case "unmute_chat":
+                    return await self._unmute_chat(params)
+                case "send_voice":
+                    return await self._send_voice(params)
                 case _:
                     return f"Noma'lum tool: {name}"
         except Exception as e:
@@ -206,3 +217,74 @@ class ToolHandler:
             return "Yangilanadigan maydon yo'q"
         await self.db.update_student(user_id, **fields)
         return f"✅ O'quvchi yangilandi: {', '.join(fields.keys())}"
+
+    async def _gen_image(self, p: dict) -> str:
+        """Gemini Imagen orqali rasm yaratish. Natija: base64 rasm."""
+        prompt = p.get("prompt", "")
+        if not prompt:
+            return "Rasm uchun tavsif kerak"
+
+        from bot.config import Config
+        if not Config.GEMINI_API_KEYS:
+            return "API kalit yo'q"
+
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key={Config.GEMINI_API_KEYS[0]}"
+        body = {
+            "contents": [{"parts": [{"text": f"Generate an image: {prompt}"}]}],
+            "generationConfig": {"responseModalities": ["TEXT", "IMAGE"]},
+        }
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=body) as resp:
+                    data = await resp.json()
+
+            if "candidates" in data:
+                for part in data["candidates"][0]["content"]["parts"]:
+                    if "inlineData" in part:
+                        # Rasm topildi — base64 sifatida qaytarish
+                        img_data = base64.b64decode(part["inlineData"]["data"])
+                        mime = part["inlineData"].get("mimeType", "image/png")
+                        return f"IMAGE:{mime}:{base64.b64encode(img_data).decode()}"
+
+            error = data.get("error", {}).get("message", "Noma'lum xato")
+            return f"Rasm yaratishda xato: {error}"
+        except Exception as e:
+            log.error("gen_image xatosi: %s", e)
+            return f"Rasm yaratishda xato: {e}"
+
+    async def _mute_chat(self, p: dict) -> str:
+        chat_id = p.get("chat_id", 0)
+        duration_min = p.get("duration_min", 60)
+        from datetime import datetime, timedelta
+        until = (datetime.utcnow() + timedelta(minutes=duration_min)).strftime("%Y-%m-%d %H:%M:%S")
+        await self.db.mute_chat(chat_id, until, p.get("reason", ""))
+        return f"🔇 Chat {duration_min} daqiqaga o'chirildi"
+
+    async def _unmute_chat(self, p: dict) -> str:
+        chat_id = p.get("chat_id", 0)
+        await self.db.unmute_chat(chat_id)
+        return f"🔊 Chat qayta yoqildi"
+
+    async def _send_voice(self, p: dict) -> str:
+        """Google TTS orqali ovozli xabar yaratish va yuborish."""
+        text = p.get("text", "")
+        lang = p.get("lang", "uz")  # uz, ar, en, tr, fa, ja, ko, zh
+        if not text:
+            return "Matn kerak"
+
+        try:
+            # Google Translate TTS (bepul, cheklanmagan)
+            encoded = aiohttp.helpers.quote(text[:200], safe="")
+            tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&q={encoded}&tl={lang}&client=tw-ob"
+
+            async with aiohttp.ClientSession() as session:
+                async with session.get(tts_url) as resp:
+                    if resp.status == 200:
+                        audio_data = await resp.read()
+                        return f"VOICE:{base64.b64encode(audio_data).decode()}"
+                    else:
+                        return f"TTS xatosi: HTTP {resp.status}"
+        except Exception as e:
+            log.error("TTS xatosi: %s", e)
+            return f"TTS xatosi: {e}"

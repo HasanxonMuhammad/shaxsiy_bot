@@ -106,6 +106,15 @@ buffer = MessageBuffer()
 dp = Dispatcher()
 
 
+def _sanitize(text: str) -> str:
+    """Prompt injection himoyasi — user matnida bot buyruqlarini zararsizlantirish."""
+    if not text:
+        return ""
+    text = text.replace("[TOOL:", "[tool:").replace("[REACT:", "[react:")
+    text = text.replace("[NO_ACTION]", "[no_action]")
+    return text
+
+
 async def set_reaction(bot: Bot, chat_id: int, message_id: int, emoji: str):
     """Xabarga reaksiya qo'yish."""
     try:
@@ -124,19 +133,19 @@ async def process_messages(chat_id: int, messages: list[dict]):
 
     history = await db.get_recent_messages(chat_id, 30)
 
-    # XML format
+    # XML format (prompt injection himoyali)
     ctx = "<chat_history>\n"
     for m in history:
         ctx += (
             f'<msg id="{m["message_id"]}" user="{m["username"] or "unknown"}" '
             f'name="{m["first_name"] or ""}" '
-            f'time="{m["timestamp"]}">{m["text"] or ""}</msg>\n'
+            f'time="{m["timestamp"]}">{_sanitize(m["text"] or "")}</msg>\n'
         )
     ctx += "</chat_history>\n\n<new_messages>\n"
     for m in messages:
         ctx += (
             f'<msg id="{m["message_id"]}" user="{m["username"]}" '
-            f'name="{m["first_name"]}">{m["text"]}</msg>\n'
+            f'name="{m["first_name"]}">{_sanitize(m["text"])}</msg>\n'
         )
     ctx += "</new_messages>\n"
 
@@ -187,6 +196,27 @@ async def process_messages(chat_id: int, messages: list[dict]):
     if tool_call:
         result = await tools.execute(tool_call)
         log.info("Tool %s: %s", tool_call["name"], result[:100])
+        # Rasm/Voice tool natijasini yuborish
+        import base64 as b64
+        from aiogram.types import BufferedInputFile
+        last_msg_id = messages[-1]["message_id"]
+
+        if result.startswith("IMAGE:"):
+            parts = result.split(":", 2)
+            img_bytes = b64.b64decode(parts[2])
+            photo = BufferedInputFile(img_bytes, filename="image.png")
+            await bot.send_photo(chat_id, photo, reply_to_message_id=last_msg_id)
+        elif result.startswith("VOICE:"):
+            audio_bytes = b64.b64decode(result[6:])
+            voice = BufferedInputFile(audio_bytes, filename="voice.mp3")
+            await bot.send_voice(chat_id, voice, reply_to_message_id=last_msg_id)
+        elif reply_text:
+            last_msg_id = messages[-1]["message_id"]
+            for chunk in _split(reply_text, 4000):
+                try:
+                    await bot.send_message(chat_id, chunk, reply_to_message_id=last_msg_id, parse_mode="HTML")
+                except Exception:
+                    await bot.send_message(chat_id, chunk, reply_to_message_id=last_msg_id)
     elif reply_text:
         # Guruhda reply qilib javob berish
         last_msg_id = messages[-1]["message_id"]
@@ -196,10 +226,18 @@ async def process_messages(chat_id: int, messages: list[dict]):
                     chat_id,
                     chunk,
                     reply_to_message_id=last_msg_id,
+                    parse_mode="HTML",
                 )
             except Exception:
-                # Reply ishlamasa oddiy yuborish
-                await bot.send_message(chat_id, chunk)
+                try:
+                    # HTML xato bo'lsa oddiy matn
+                    await bot.send_message(
+                        chat_id,
+                        chunk,
+                        reply_to_message_id=last_msg_id,
+                    )
+                except Exception:
+                    await bot.send_message(chat_id, chunk)
 
 
 def _split(text: str, n: int) -> list[str]:
@@ -314,10 +352,16 @@ async def on_message(message: types.Message):
         log.info("Guruh xabar: chat_id=%d, user=%s", chat_id, username or first_name)
         if not Config.is_allowed_group(chat_id):
             return
+        # Muted chat tekshiruvi
+        if await db.is_muted(chat_id) and not Config.is_owner(user_id):
+            return
 
     # Spam filter (guruhlar uchun)
-    if chat_id < 0:
+    if chat_id < 0 and not Config.is_vip(user_id):
         spam_result = spam_filter.check(text)
+        # Noaniq bo'lsa AI bilan tekshirish
+        if spam_result is None and len(text) > 20 and Config.GEMINI_API_KEYS:
+            spam_result = await spam_filter.classify_with_ai(text, Config.GEMINI_API_KEYS[0])
         if spam_result is True:
             log.warning("Spam: %s: %s", username, text[:50])
             strikes = await db.add_strike(user_id)
@@ -356,7 +400,7 @@ async def on_message(message: types.Message):
     )
 
 
-# ── Background tasks ─────���───────────────────────────────────
+# ── Background tasks ──────────────────────────────────────────
 
 async def reminder_loop(bot: Bot):
     while True:
@@ -371,6 +415,47 @@ async def reminder_loop(bot: Bot):
                 await db.complete_reminder(r["id"])
         except Exception as e:
             log.error("Reminder xatosi: %s", e)
+
+
+async def daily_digest_loop(bot: Bot):
+    """Har kuni ertalab 08:00 da (UTC+5) digest yuborish."""
+    from datetime import datetime, timezone, timedelta
+    uz_tz = timezone(timedelta(hours=5))
+
+    while True:
+        now = datetime.now(uz_tz)
+        # Keyingi 08:00 ni hisoblash
+        target = now.replace(hour=8, minute=0, second=0, microsecond=0)
+        if now >= target:
+            target += timedelta(days=1)
+        wait_sec = (target - now).total_seconds()
+        log.info("Daily digest: %d soniyadan keyin (%.1f soat)", wait_sec, wait_sec / 3600)
+        await asyncio.sleep(wait_sec)
+
+        try:
+            # O'quvchilar statistikasi
+            students = await db.list_students()
+            if not students:
+                continue
+
+            digest = f"📊 <b>Kunlik hisobot — {datetime.now(uz_tz).strftime('%d.%m.%Y')}</b>\n\n"
+            digest += f"👥 Jami o'quvchilar: {len(students)}\n"
+
+            active = [s for s in students if s.get("last_lesson_date")]
+            if active:
+                digest += f"📖 Dars topshirganlar: {len(active)}\n"
+                top = sorted(active, key=lambda s: s.get("avg_score", 0), reverse=True)[:3]
+                if top:
+                    digest += "\n🏆 <b>Top o'quvchilar:</b>\n"
+                    for i, s in enumerate(top, 1):
+                        digest += f"  {i}. {s['first_name']} — ⭐{s['avg_score']}/10 ({s['total_lessons']} dars)\n"
+
+            # Owner ga yuborish
+            await bot.send_message(Config.OWNER_ID, digest, parse_mode="HTML")
+            log.info("Daily digest yuborildi")
+
+        except Exception as e:
+            log.error("Daily digest xatosi: %s", e)
 
 
 # ── Start ─��───────────────────────────��───────────────────────
@@ -397,5 +482,6 @@ async def start_bot():
     log.info("📖 %s ishga tushdi! Bismillah! 🤲", Config.BOT_NAME)
 
     asyncio.create_task(reminder_loop(bot))
+    asyncio.create_task(daily_digest_loop(bot))
 
     await dp.start_polling(bot)

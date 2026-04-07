@@ -57,13 +57,26 @@ class Database:
         ]
 
     async def search_messages(self, chat_id: int, query: str, limit: int = 20) -> list[dict]:
-        cursor = await self._db.execute(
-            """SELECT message_id, user_id, username, first_name, text,
-                      reply_to_message_id, timestamp
-               FROM messages WHERE chat_id = ? AND text LIKE ?
-               ORDER BY message_id DESC LIMIT ?""",
-            (chat_id, f"%{query}%", limit),
-        )
+        # Avval FTS5 bilan sinash, ishlamasa LIKE ga qaytish
+        try:
+            cursor = await self._db.execute(
+                """SELECT m.message_id, m.user_id, m.username, m.first_name, m.text,
+                          m.reply_to_message_id, m.timestamp
+                   FROM messages m
+                   JOIN messages_fts f ON m.rowid = f.rowid
+                   WHERE f.messages_fts MATCH ? AND m.chat_id = ?
+                   ORDER BY m.message_id DESC LIMIT ?""",
+                (query, chat_id, limit),
+            )
+        except Exception:
+            # FTS ishlamasa oddiy LIKE
+            cursor = await self._db.execute(
+                """SELECT message_id, user_id, username, first_name, text,
+                          reply_to_message_id, timestamp
+                   FROM messages WHERE chat_id = ? AND text LIKE ?
+                   ORDER BY message_id DESC LIMIT ?""",
+                (chat_id, f"%{query}%", limit),
+            )
         rows = await cursor.fetchall()
         return [
             dict(
@@ -171,9 +184,96 @@ class Database:
             return dict(zip(cols, row))
         return None
 
+    # ── Focus Mode ─────────────────────────────────────────
+    async def get_focus(self) -> int | None:
+        cursor = await self._db.execute("SELECT chat_id FROM focus_state WHERE id = 1")
+        row = await cursor.fetchone()
+        return row[0] if row else None
+
+    async def set_focus(self, chat_id: int | None):
+        await self._db.execute(
+            "INSERT INTO focus_state (id, chat_id) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET chat_id = ?",
+            (chat_id, chat_id),
+        )
+        await self._db.commit()
+
+    async def set_chat_alias(self, alias: str, chat_id: int):
+        await self._db.execute(
+            "INSERT OR REPLACE INTO chat_aliases (alias, chat_id) VALUES (?, ?)",
+            (alias, chat_id),
+        )
+        await self._db.commit()
+
+    async def get_chat_by_alias(self, alias: str) -> int | None:
+        cursor = await self._db.execute(
+            "SELECT chat_id FROM chat_aliases WHERE alias = ?", (alias,)
+        )
+        row = await cursor.fetchone()
+        return row[0] if row else None
+
+    async def mute_chat(self, chat_id: int, until: str | None = None, reason: str = ""):
+        await self._db.execute(
+            "INSERT OR REPLACE INTO muted_chats (chat_id, muted_until, reason) VALUES (?, ?, ?)",
+            (chat_id, until, reason),
+        )
+        await self._db.commit()
+
+    async def unmute_chat(self, chat_id: int):
+        await self._db.execute("DELETE FROM muted_chats WHERE chat_id = ?", (chat_id,))
+        await self._db.commit()
+
+    async def is_muted(self, chat_id: int) -> bool:
+        cursor = await self._db.execute(
+            "SELECT muted_until FROM muted_chats WHERE chat_id = ?", (chat_id,)
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return False
+        if row[0]:
+            from datetime import datetime
+            try:
+                until = datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S")
+                if datetime.utcnow() > until:
+                    await self.unmute_chat(chat_id)
+                    return False
+            except ValueError:
+                pass
+        return True
+
+    # ── Bot-to-bot xabarlar ─────────────────────────────────
+    async def send_bot_message(self, from_bot: str, to_bot: str | None, message: str):
+        await self._db.execute(
+            "INSERT INTO bot_messages (from_bot, to_bot, message) VALUES (?, ?, ?)",
+            (from_bot, to_bot, message),
+        )
+        await self._db.commit()
+
+    async def poll_bot_messages(self, bot_name: str) -> list[dict]:
+        cursor = await self._db.execute(
+            """SELECT id, from_bot, message, created_at FROM bot_messages
+               WHERE (to_bot = ? OR to_bot IS NULL) AND from_bot != ? AND read = 0
+               ORDER BY created_at""",
+            (bot_name, bot_name),
+        )
+        rows = await cursor.fetchall()
+        if rows:
+            ids = [r[0] for r in rows]
+            placeholders = ",".join("?" * len(ids))
+            await self._db.execute(
+                f"UPDATE bot_messages SET read = 1 WHERE id IN ({placeholders})", ids
+            )
+            await self._db.commit()
+        return [dict(id=r[0], from_bot=r[1], message=r[2], created_at=r[3]) for r in rows]
+
+    STUDENT_ALLOWED_FIELDS = {"level", "current_sura", "notes", "completed_suras", "first_name", "username"}
+
     async def update_student(self, user_id: int, **fields):
-        sets = ", ".join(f"{k} = ?" for k in fields)
-        vals = list(fields.values()) + [user_id]
+        # SQL injection himoya: faqat ruxsat berilgan maydonlar
+        safe_fields = {k: v for k, v in fields.items() if k in self.STUDENT_ALLOWED_FIELDS}
+        if not safe_fields:
+            return
+        sets = ", ".join(f"{k} = ?" for k in safe_fields)
+        vals = list(safe_fields.values()) + [user_id]
         await self._db.execute(
             f"UPDATE students SET {sets} WHERE user_id = ?", vals
         )

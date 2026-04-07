@@ -80,6 +80,29 @@ CREATE TABLE IF NOT EXISTS student_notes (
     FOREIGN KEY (user_id) REFERENCES students(user_id)
 );
 
+-- Bot-to-bot xabarlar
+CREATE TABLE IF NOT EXISTS bot_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    from_bot TEXT NOT NULL,
+    to_bot TEXT,
+    message TEXT NOT NULL,
+    read INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_bot_messages ON bot_messages(to_bot, read);
+-- Full-text search uchun virtual jadval
+CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+    text,
+    content='messages',
+    content_rowid='rowid'
+);
+
+-- FTS triggerlari (yangi xabar kelganda avtomatik indekslanadi)
+CREATE TRIGGER IF NOT EXISTS messages_fts_insert AFTER INSERT ON messages BEGIN
+    INSERT INTO messages_fts(rowid, text) VALUES (new.rowid, new.text);
+END;
+
 CREATE INDEX IF NOT EXISTS idx_messages_chat_time ON messages(chat_id, timestamp);
 CREATE INDEX IF NOT EXISTS idx_reminders_trigger ON reminders(completed, trigger_at);
 CREATE INDEX IF NOT EXISTS idx_lessons_user ON lessons(user_id, submitted_at);

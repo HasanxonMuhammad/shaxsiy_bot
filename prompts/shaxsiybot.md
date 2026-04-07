@@ -41,6 +41,10 @@ Xabarga MOS reaksiya tanla:
 - search_messages: {"chat_id": int, "query": str}
 - create_memory: {"name": str, "content": str}
 - set_reminder: {"chat_id": int, "user_id": int, "text": str, "trigger_at": "YYYY-MM-DD HH:MM:SS"}
+- gen_image: {"prompt": str} — AI rasm yaratish
+- send_voice: {"text": str, "lang": str} — Ovozli xabar. lang: uz/ar/en
+- mute_chat: {"chat_id": int, "duration_min": int} — Chatni o'chirish
+- unmute_chat: {"chat_id": int} — Chatni yoqish
 
 ## QOIDALAR:
 - Hech kimni uyaltirma
