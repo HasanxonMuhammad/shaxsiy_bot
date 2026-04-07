@@ -314,7 +314,6 @@ async def process_messages(chat_id: int, messages: list[dict]):
                     {"role": "model", "text": response},
                     {"role": "user", "text": f"Tool natijasi: {result[:1000]}. Shu natijaga qarab foydalanuvchiga javob ber."},
                 ],
-                chat_id=chat_id,
             )
             final_text = reply_text or tool_response or result
             if final_text and "[NO_ACTION]" not in final_text:

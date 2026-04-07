@@ -302,16 +302,26 @@ class ToolHandler:
             return "Matn kerak"
 
         try:
-            # Google Translate TTS (bepul, cheklanmagan)
-            encoded = aiohttp.helpers.quote(text[:200], safe="")
-            tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&q={encoded}&tl={lang}&client=tw-ob"
+            from urllib.parse import quote
+            encoded = quote(text[:200])
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Referer": "https://translate.google.com/",
+            }
+            tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&q={encoded}&tl={lang}&client=tw-ob&ttsspeed=1"
 
             async with aiohttp.ClientSession() as session:
-                async with session.get(tts_url) as resp:
+                async with session.get(tts_url, headers=headers) as resp:
                     if resp.status == 200:
                         audio_data = await resp.read()
                         return f"VOICE:{base64.b64encode(audio_data).decode()}"
                     else:
+                        # Fallback: gtts.io
+                        tts_url2 = f"https://api.voicerss.org/?key=demo&hl={lang}&src={encoded}"
+                        async with session.get(tts_url2) as resp2:
+                            if resp2.status == 200:
+                                audio_data = await resp2.read()
+                                return f"VOICE:{base64.b64encode(audio_data).decode()}"
                         return f"TTS xatosi: HTTP {resp.status}"
         except Exception as e:
             log.error("TTS xatosi: %s", e)
