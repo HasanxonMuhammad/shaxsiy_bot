@@ -303,13 +303,20 @@ async def _stream_response(bot: Bot, ai: GeminiEngine, chat_id: int,
         if full_text == last_sent:
             continue
 
+        # [TOOL:...] stream da ko'rsatmaslik — tool call ni yashirish
+        display_text = re.sub(r"\[TOOL:\w+\]\{[^}]*\}?", "", full_text).strip()
+        display_text = re.sub(r"\[REACT:[^\]]+\]", "", display_text).strip()
+        display_text = re.sub(r"\[NO_ACTION\]", "", display_text).strip()
+        if not display_text or display_text == last_sent:
+            continue
+
         try:
             await bot(SendMessageDraft(
                 chat_id=chat_id,
                 draft_id=draft_id,
-                text=full_text[:4096],
+                text=display_text[:4096],
             ))
-            last_sent = full_text
+            last_sent = display_text
             last_send_time = now
         except Exception as e:
             log.debug("Draft xato: %s", e)
