@@ -271,6 +271,13 @@ async def process_messages(chat_id: int, messages: list[dict]):
     if not response:
         return
 
+    log.info("AI javob (%d belgi): %s", len(response), response[:150])
+
+    # [NO_ACTION] tekshiruvi
+    if "[NO_ACTION]" in response:
+        log.info("AI [NO_ACTION] qaytardi, o'tkazildi")
+        return
+
     # Reaksiya bormi tekshirish: [REACT:emoji]
     react_match = re.search(r"\[REACT:([^\]]+)\]", response)
     if react_match:
@@ -280,6 +287,7 @@ async def process_messages(chat_id: int, messages: list[dict]):
         response = re.sub(r"\[REACT:[^\]]+\]", "", response).strip()
 
     reply_text, tool_call = parse_response(response)
+    log.info("Parse: reply_text=%d belgi, tool=%s", len(reply_text) if reply_text else 0, tool_call.get("name") if tool_call else "yo'q")
 
     if tool_call:
         result = await tools.execute(tool_call)
