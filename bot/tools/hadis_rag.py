@@ -89,15 +89,16 @@ class HadisRAG:
     def _format_rows(self, rows) -> str:
         parts = []
         for r in rows:
-            lines = [f"📖 <b>{r['kitob_nomi']}</b>"]
-            if r["sarlavha"]:
-                lines.append(f"<b>{r['sarlavha']}</b>")
+            lines = []
+            lines.append(f"KITOB: {r['kitob_nomi']}")
             if r["hadis_raqam"]:
-                lines.append(f"#{r['hadis_raqam']}")
+                lines.append(f"RAQAM: {r['hadis_raqam']}")
+            if r["sarlavha"]:
+                lines.append(f"SARLAVHA: {r['sarlavha']}")
             if r["arabcha"]:
-                lines.append(r["arabcha"][:500])
+                lines.append(f"ARABCHA: {r['arabcha']}")
             if r["uzbekcha"]:
-                lines.append(r["uzbekcha"][:800])
+                lines.append(f"UZBEKCHA: {r['uzbekcha']}")
             parts.append("\n".join(lines))
         return "\n\n---\n\n".join(parts)
 
@@ -140,13 +141,16 @@ class HadisRAG:
             conn.close()
             if not row:
                 return "Hadis topilmadi"
-            lines = [f"📖 <b>{row['kitob_nomi']}</b>"]
+            lines = []
+            lines.append(f"KITOB: {row['kitob_nomi']}")
+            if row["hadis_raqam"]:
+                lines.append(f"RAQAM: {row['hadis_raqam']}")
             if row["sarlavha"]:
-                lines.append(f"<b>{row['sarlavha']}</b>")
+                lines.append(f"SARLAVHA: {row['sarlavha']}")
             if row["arabcha"]:
-                lines.append(row["arabcha"][:500])
+                lines.append(f"ARABCHA: {row['arabcha']}")
             if row["uzbekcha"]:
-                lines.append(row["uzbekcha"][:800])
-            return "\n\n".join(lines)
+                lines.append(f"UZBEKCHA: {row['uzbekcha']}")
+            return "\n".join(lines)
         except Exception as e:
             return f"Xato: {e}"
