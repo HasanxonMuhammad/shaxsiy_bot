@@ -256,11 +256,8 @@ async def process_messages(chat_id: int, messages: list[dict]):
     # Yangi xabarni qo'shish
     conversation.append({"role": "user", "text": ctx, "media": all_media})
 
-    # Private chatda stream, guruhda oddiy
-    is_private = chat_id > 0
-    can_stream = is_private and not all_media and not Config.USE_SEARCH
-
-    if can_stream:
+    # Stream o'chirilgan — tool call ko'rinib qolish muammosi tufayli
+    if False:
         response = await _stream_response(bot, ai, chat_id, messages, conversation, db, tools, ctx)
     else:
         response = await ai.chat(
