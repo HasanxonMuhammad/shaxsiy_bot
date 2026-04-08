@@ -11,7 +11,6 @@ from bot.db import Database
 from bot.ai import GeminiEngine
 from bot.memory import MemoryStore
 from bot.tools import ToolHandler
-from bot.tools.handler import parse_response
 from bot.telegram.spam import SpamFilter
 
 log = logging.getLogger(__name__)
@@ -257,28 +256,105 @@ async def process_messages(chat_id: int, messages: list[dict]):
     # Yangi xabarni qo'shish
     conversation.append({"role": "user", "text": ctx, "media": all_media})
 
-    response = await ai.chat(
-        build_system_prompt(),
-        conversation,
-        use_search=Config.USE_SEARCH,
-    )
+    # Private chatda stream, guruhda oddiy
+    is_private = chat_id > 0
+    can_stream = is_private and not all_media and not Config.USE_SEARCH
 
-    # Session ga saqlash (user xabari + AI javobi)
+    if can_stream:
+        response = await _stream_response(bot, ai, chat_id, messages, conversation, db, tools, ctx)
+    else:
+        response = await ai.chat(
+            build_system_prompt(),
+            conversation,
+            use_search=Config.USE_SEARCH,
+        )
+        # Session ga saqlash
+        await db.save_session_turn(chat_id, "user", ctx[:3000])
+        if response:
+            await db.save_session_turn(chat_id, "model", response[:3000])
+        if not response:
+            return
+        await _handle_response(bot, ai, db, tools, chat_id, messages, response)
+
+
+async def _stream_response(bot: Bot, ai: GeminiEngine, chat_id: int,
+                           messages: list, conversation: list, db: Database,
+                           tools: ToolHandler, ctx: str):
+    """Private chatda Gemini stream + sendMessageDraft orqali real-time javob."""
+    from aiogram.methods import SendMessageDraft
+    import random
+
+    draft_id = random.randint(1, 2**31 - 1)
+    full_text = ""
+    last_sent = ""
+    last_send_time = 0
+    MIN_INTERVAL = 0.4  # Har 400ms da yangilash
+
+    had_content = False
+    async for chunk, accumulated in ai.chat_stream(build_system_prompt(), conversation):
+        full_text = accumulated
+        had_content = True
+
+        now = asyncio.get_event_loop().time()
+        # Juda tez-tez yubormaslik (Telegram rate limit)
+        if now - last_send_time < MIN_INTERVAL:
+            continue
+        # Matn o'zgarmagan bo'lsa yubormaslik
+        if full_text == last_sent:
+            continue
+
+        try:
+            await bot(SendMessageDraft(
+                chat_id=chat_id,
+                draft_id=draft_id,
+                text=full_text[:4096],
+            ))
+            last_sent = full_text
+            last_send_time = now
+        except Exception as e:
+            log.debug("Draft xato: %s", e)
+
+    # Stream tugadi — fallback: agar stream ishlamagan bo'lsa oddiy chat
+    if not had_content:
+        response = await ai.chat(
+            build_system_prompt(), conversation,
+            use_search=Config.USE_SEARCH,
+        )
+        await db.save_session_turn(chat_id, "user", ctx[:3000])
+        if response:
+            await db.save_session_turn(chat_id, "model", response[:3000])
+        if not response:
+            return response
+        await _handle_response(bot, ai, db, tools, chat_id, messages, response)
+        return response
+
+    response = full_text
+
+    # Session saqlash
     await db.save_session_turn(chat_id, "user", ctx[:3000])
     if response:
         await db.save_session_turn(chat_id, "model", response[:3000])
 
     if not response:
-        return
+        return response
+
+    await _handle_response(bot, ai, db, tools, chat_id, messages, response)
+    return response
+
+
+async def _handle_response(bot: Bot, ai: GeminiEngine, db: Database,
+                           tools: ToolHandler, chat_id: int,
+                           messages: list, response: str):
+    """AI javobini parse qilib yuborish (tool, react, oddiy matn)."""
+    from bot.tools.handler import parse_response
 
     log.info("AI javob (%d belgi): %s", len(response), response[:150])
 
-    # [NO_ACTION] tekshiruvi
     if "[NO_ACTION]" in response:
         log.info("AI [NO_ACTION] qaytardi, o'tkazildi")
         return
 
-    # Reaksiya bormi tekshirish: [REACT:emoji]
+    # Reaksiya
     react_match = re.search(r"\[REACT:([^\]]+)\]", response)
     if react_match:
         emoji = react_match.group(1).strip()
@@ -287,7 +363,9 @@ async def process_messages(chat_id: int, messages: list[dict]):
         response = re.sub(r"\[REACT:[^\]]+\]", "", response).strip()
 
     reply_text, tool_call = parse_response(response)
-    log.info("Parse: reply_text=%d belgi, tool=%s", len(reply_text) if reply_text else 0, tool_call.get("name") if tool_call else "yo'q")
+    log.info("Parse: reply_text=%d belgi, tool=%s",
+             len(reply_text) if reply_text else 0,
+             tool_call.get("name") if tool_call else "yo'q")
 
     if tool_call:
         result = await tools.execute(tool_call)
@@ -317,7 +395,6 @@ async def process_messages(chat_id: int, messages: list[dict]):
                 await bot.send_message(chat_id, "Ovozli xabar yuborishda xato chiqdi",
                                        reply_to_message_id=last_msg_id)
         else:
-            # Tool natijasini AI ga qayta berib, foydalanuvchiga javob yozdirish
             tool_response = await ai.chat(
                 build_system_prompt(),
                 [
@@ -332,28 +409,23 @@ async def process_messages(chat_id: int, messages: list[dict]):
                 final_text = re.sub(r"\[REACT:[^\]]+\]", "", final_text).strip()
                 for chunk in _split(final_text, 4000):
                     try:
-                        await bot.send_message(chat_id, chunk, reply_to_message_id=last_msg_id, parse_mode="HTML")
+                        await bot.send_message(chat_id, chunk,
+                                               reply_to_message_id=messages[-1]["message_id"],
+                                               parse_mode="HTML")
                     except Exception:
-                        await bot.send_message(chat_id, chunk, reply_to_message_id=last_msg_id)
+                        await bot.send_message(chat_id, chunk,
+                                               reply_to_message_id=messages[-1]["message_id"])
     elif reply_text:
-        # Guruhda reply qilib javob berish
         last_msg_id = messages[-1]["message_id"]
         for chunk in _split(reply_text, 4000):
             try:
-                await bot.send_message(
-                    chat_id,
-                    chunk,
-                    reply_to_message_id=last_msg_id,
-                    parse_mode="HTML",
-                )
+                await bot.send_message(chat_id, chunk,
+                                       reply_to_message_id=last_msg_id,
+                                       parse_mode="HTML")
             except Exception:
                 try:
-                    # HTML xato bo'lsa oddiy matn
-                    await bot.send_message(
-                        chat_id,
-                        chunk,
-                        reply_to_message_id=last_msg_id,
-                    )
+                    await bot.send_message(chat_id, chunk,
+                                           reply_to_message_id=last_msg_id)
                 except Exception:
                     await bot.send_message(chat_id, chunk)
 

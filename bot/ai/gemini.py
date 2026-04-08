@@ -10,6 +10,7 @@ import google.generativeai as genai
 log = logging.getLogger(__name__)
 
 API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
+STREAM_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?alt=sse&key={key}"
 
 # SDK patterndan: retry konstantalari
 MAX_RETRIES = 3
@@ -90,6 +91,56 @@ class GeminiEngine:
             return await self._chat_rest(system_prompt, messages, use_search=True)
         else:
             return await self._chat_rest(system_prompt, messages, use_search=False)
+
+    async def chat_stream(self, system_prompt: str, messages: list[dict]):
+        """Gemini SSE stream — har bir chunk kelganda yield qiladi.
+        Yields: (chunk_text, full_text_so_far)
+        """
+        contents = []
+        for msg in messages:
+            parts = []
+            if msg.get("text"):
+                parts.append({"text": msg["text"]})
+            contents.append({"role": msg["role"], "parts": parts})
+
+        body = {
+            "contents": contents,
+            "systemInstruction": {"parts": [{"text": system_prompt}]},
+            "generationConfig": {"temperature": 0.9, "maxOutputTokens": 4096},
+        }
+
+        http = await self._get_http()
+        url = STREAM_URL.format(model=self._model_name, key=self._keys[self._current_key])
+        full_text = ""
+
+        try:
+            async with http.post(url, json=body) as resp:
+                if resp.status != 200:
+                    # Stream ishlamasa oddiy chat ga fallback
+                    return
+
+                async for line in resp.content:
+                    line = line.decode("utf-8").strip()
+                    if not line.startswith("data: "):
+                        continue
+                    import json
+                    try:
+                        data = json.loads(line[6:])
+                    except (json.JSONDecodeError, ValueError):
+                        continue
+
+                    candidates = data.get("candidates", [])
+                    if not candidates:
+                        continue
+                    parts = candidates[0].get("content", {}).get("parts", [])
+                    for part in parts:
+                        if "text" in part:
+                            chunk = part["text"]
+                            full_text += chunk
+                            yield chunk, full_text
+
+        except Exception as e:
+            log.error("Gemini stream xatosi: %s", e)
 
     async def _chat_rest(self, system_prompt: str, messages: list[dict], use_search: bool = False) -> str:
         """REST API — google_search + retry logic."""
