@@ -8,6 +8,7 @@ import aiohttp
 from bot.db import Database
 from bot.memory import MemoryStore
 from bot.tools.lugat import Lugat
+from bot.tools.kitob import KitobRAG
 
 log = logging.getLogger(__name__)
 
@@ -46,6 +47,8 @@ class ToolHandler:
         from bot.config import Config
         lugat_path = Config.DATA_DIR / "universal_lugat.db"
         self.lugat = Lugat(lugat_path) if lugat_path.exists() else None
+        kitob_path = Config.DATA_DIR / "kitoblar.db"
+        self.kitob = KitobRAG(kitob_path)
 
     async def execute(self, tool: dict) -> str:
         """SDK pattern: pre-validation → execute → post-logging."""
@@ -113,6 +116,10 @@ class ToolHandler:
                 return await self._send_voice(params)
             case "lugat":
                 return self._lugat_search(params)
+            case "kitob_qidirish":
+                return self._kitob_search(params)
+            case "list_kitoblar":
+                return self._list_kitoblar()
             case _:
                 return f"Noma'lum tool: {name}"
 
@@ -309,6 +316,17 @@ class ToolHandler:
         if not query:
             return "Qidiruv so'zi kerak"
         return self.lugat.search(query, limit=p.get("limit", 5))
+
+    def _kitob_search(self, p: dict) -> str:
+        """Kitob bazasidan qidirish (RAG)."""
+        query = p.get("query", "")
+        if not query:
+            return "Qidiruv so'zi kerak"
+        return self.kitob.search(query, limit=p.get("limit", 5))
+
+    def _list_kitoblar(self) -> str:
+        """Barcha indekslangan kitoblar ro'yxati."""
+        return self.kitob.list_books()
 
     async def _mute_chat(self, p: dict) -> str:
         chat_id = p.get("chat_id", 0)
