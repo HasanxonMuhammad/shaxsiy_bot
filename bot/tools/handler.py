@@ -9,6 +9,7 @@ from bot.db import Database
 from bot.memory import MemoryStore
 from bot.tools.lugat import Lugat
 from bot.tools.kitob import KitobRAG
+from bot.tools.hadis_rag import HadisRAG
 from bot.tools.islamic_api import IslamicAPI
 
 log = logging.getLogger(__name__)
@@ -50,6 +51,8 @@ class ToolHandler:
         self.lugat = Lugat(lugat_path) if lugat_path.exists() else None
         kitob_path = Config.DATA_DIR / "kitoblar.db"
         self.kitob = KitobRAG(kitob_path)
+        hadis_path = Config.DATA_DIR / "hadislar.db"
+        self.hadis_rag = HadisRAG(hadis_path)
         self.islamic = IslamicAPI()
 
     async def execute(self, tool: dict) -> str:
@@ -124,6 +127,10 @@ class ToolHandler:
                 return self._list_kitoblar()
             case "hadis":
                 return await self._hadis(params)
+            case "hadis_kitoblar":
+                return self.hadis_rag.list_books()
+            case "tasodifiy_hadis":
+                return self.hadis_rag.get_random()
             case "quron":
                 return await self._quron(params)
             case _:
@@ -335,13 +342,26 @@ class ToolHandler:
         return self.kitob.list_books()
 
     async def _hadis(self, p: dict) -> str:
-        """Hadis qidirish yoki ID bo'yicha olish."""
+        """Hadis qidirish — avval lokal RAG, keyin API."""
+        query = p.get("query", "")
         hid = p.get("id")
+
         if hid:
             return await self.islamic.get_hadith_by_id(str(hid))
-        query = p.get("query", "")
+
         if not query:
+            # Tasodifiy hadis
+            random_h = self.hadis_rag.get_random()
+            if random_h:
+                return random_h
             return "Hadis qidirish uchun 'query' yoki 'id' kerak"
+
+        # Avval lokal bazadan qidirish (hadis.islom.uz)
+        local = self.hadis_rag.search(query, limit=p.get("limit", 3))
+        if local:
+            return local
+
+        # Lokal topilmasa — API dan qidirish
         return await self.islamic.search_hadith(query, limit=p.get("limit", 3))
 
     async def _quron(self, p: dict) -> str:

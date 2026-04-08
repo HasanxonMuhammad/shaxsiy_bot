@@ -2,7 +2,19 @@
   "permissions": {
     "allow": [
       "WebFetch(domain:gist.github.com)",
-      "WebFetch(domain:gist.githubusercontent.com)"
+      "WebFetch(domain:gist.githubusercontent.com)",
+      "Bash(python -c \"import py_compile; py_compile.compile\\('bot/telegram/dispatcher.py', doraise=True\\)\")",
+      "Read(//d/hasanxon/bot_uchun_ozuqa/**)",
+      "WebFetch(domain:hadis.islom.uz)",
+      "Bash(python -c ':*)",
+      "Bash(PYTHONIOENCODING=utf-8 python scrape_hadis.py)",
+      "Bash(python index_books.py \"d:/hasanxon/bot_uchun_ozuqa/arabcha/\" --force)",
+      "Read(//tmp/**)",
+      "Bash(tasklist)",
+      "Bash(wmic process:*)",
+      "Bash(taskkill //PID 9848 //F)",
+      "Bash(ls -lh d:/hasanxon/bot_uchun_ozuqa/arabcha/*.txt)",
+      "Bash(PYTHONIOENCODING=utf-8 python index_books.py \"d:/hasanxon/bot_uchun_ozuqa/arabcha/\" --force)"
     ]
   }
 }

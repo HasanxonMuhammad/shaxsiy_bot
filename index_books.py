@@ -17,7 +17,14 @@ Til aniqlash:
     Fayl nomi yoki papka nomida "uz", "uzb"  -> o'zbekcha
     Boshqacha -> "other"
 """
+import io
 import re
+import sys
+
+# Windows konsol uchun UTF-8
+if sys.stdout.encoding != 'utf-8':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 import sqlite3
 import sys
 from pathlib import Path
@@ -107,7 +114,8 @@ def read_file(path: Path) -> str:
 
 def chunk_text(text: str) -> list[str]:
     """Matnni CHUNK_SIZE uzunligidagi parchalarga bo'ladi."""
-    # Bo'sh satrlarni tozalash
+    # PAGE_SEPARATOR va ortiqcha bo'sh satrlarni tozalash
+    text = text.replace('PAGE_SEPARATOR', '')
     text = re.sub(r'\n{3,}', '\n\n', text).strip()
     if not text:
         return []
@@ -130,9 +138,10 @@ def chunk_text(text: str) -> list[str]:
         chunk = text[start:cut].strip()
         if chunk:
             chunks.append(chunk)
-        start = cut - CHUNK_OVERLAP
-        if start < 0:
-            start = 0
+        new_start = cut - CHUNK_OVERLAP
+        if new_start <= start:
+            new_start = cut  # Orqaga ketmaslik — cheksiz loop oldini olish
+        start = max(new_start, 0)
     return chunks
 
 
@@ -140,7 +149,9 @@ def chunk_text(text: str) -> list[str]:
 
 def index_file(conn: sqlite3.Connection, path: Path, force: bool = False):
     filename = str(path.resolve())
-    title = path.stem.replace("_", " ").replace("-", " ")
+    raw = path.stem.replace("_", " ")
+    # Faqat birinchi " - " gacha olish (qolganida nashriyot, raqam bor)
+    title = raw.split(" - ")[0].strip() if " - " in raw else raw
     lang = detect_lang(path)
 
     # Allaqachon indekslangan?
