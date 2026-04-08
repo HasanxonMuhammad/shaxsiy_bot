@@ -544,43 +544,61 @@ async def on_channel_post(message: types.Message):
 
     log.info("Kanal post: @%s: %s", username, text[:80])
 
-    # Kanal postini bazaga saqlash — keyinroq qidirish uchun
-    from datetime import datetime
-    await db.save_message(
-        chat_id=chat.id,
-        message_id=message.message_id,
-        user_id=None,
-        username=f"@{username}",
-        first_name=chat.title or username,
-        text=text,
-        reply_to=None,
-        timestamp=datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+    # Regex prefilter — kalit so'zlar bilan muhimlikni tez tekshirish
+    RELEVANT_KEYWORDS = re.compile(
+        r'(imtihon|sessia|deadline|grant|stipendiya|konferensiya|olimpiada|'
+        r'konkurs|arizalar|ro\'yxat|muddati|talaba|magistr|bakalavr|'
+        r'sharqshunoslik|TSUOS|o\'quv|dars|fakultet|dekan|rektor|'
+        r'ta\'lim|o\'zbekiston|toshkent|universitet|akademiya|'
+        r'ish o\'rni|vakansiya|amaliyot|stajiro|sertifikat)',
+        re.IGNORECASE
     )
 
-    # AI bilan muhimligini aniqlash
+    is_relevant = bool(RELEVANT_KEYWORDS.search(text))
+
+    # Bazaga saqlash — faqat tegishli postlar
+    if is_relevant:
+        from datetime import datetime
+        await db.save_message(
+            chat_id=chat.id,
+            message_id=message.message_id,
+            user_id=None,
+            username=f"@{username}",
+            first_name=chat.title or username,
+            text=text,
+            reply_to=None,
+            timestamp=datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+        )
+        log.info("Kanal post saqlandi: @%s (tegishli)", username)
+    else:
+        log.debug("Kanal post o'tkazildi: @%s (tegishli emas)", username)
+        return
+
+    # AI bilan guruhga ulashish kerakmi tekshirish
     if not Config.GEMINI_API_KEYS:
         return
 
-    classify_prompt = f"""Quyidagi kanal posti muhimmi? Muhim = deadline, imtihon, konferensiya, ish o'rni, grant, muhim e'lon.
-Oddiy yangilik yoki reklama = muhim emas.
-Javob FAQAT: MUHIM yoki ODDIY
+    classify_prompt = f"""Quyidagi xabar TSUOS sharqshunoslik talabalariga tegishlimi?
+Tegishli = imtihon, dars, stipendiya, grant, konferensiya, olimpiada, universitet yangiliklari, ta'lim sohasi.
+TEGISHLI EMAS = siyosat, sport, ko'ngilochar, reklama, chet el yangiliklari, amerikadagi voqealar.
+Javob FAQAT: TEGISHLI yoki YO'Q
 
 Kanal: @{username}
-Post: {text[:500]}"""
+Xabar: {text[:500]}"""
 
     response = await ai.chat(
-        "Sen yangilik klassifikatori. Faqat MUHIM yoki ODDIY deb javob ber.",
+        "Sen klassifikator. TEGISHLI yoki YO'Q deb javob ber.",
         [{"role": "user", "text": classify_prompt}],
     )
 
-    if response and "MUHIM" in response.upper():
+    if response and "TEGISHLI" in response.upper():
         tg_bot: Bot = dp["bot"]
-        # Guruhga ulashish — tabiiy uslubda
-        share_prompt = f"""Kanaldan muhim yangilik keldi. Buni guruhga tabiiy tilda ulash — xuddi do'sting yangilik aytgandek.
+        # Guruhga ulashish — guruh muhitiga mos uslubda
+        share_prompt = f"""Kanaldan talabalar uchun tegishli yangilik keldi. Buni guruhga ulash.
 Kanal: @{username}
 Yangilik: {text[:1000]}
 
-QISQA yoz, 2-3 jumla. Link ham ber agar bor bo'lsa. Rasmiy yozma."""
+QISQA yoz, 2-3 jumla. Guruh muhitiga mos, samimiy uslubda. Link qo'sh agar bor bo'lsa."""
 
         share_text = await ai.chat(
             "Sen guruh a'zosi. Yangilikni tabiiy tilda ulash.",
