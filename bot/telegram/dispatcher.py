@@ -683,7 +683,143 @@ async def daily_digest_loop(bot: Bot):
             log.error("Daily digest xatosi: %s", e)
 
 
-# ── Start ─��───────────────────────────��───────────────────────
+async def channel_poll_loop(bot: Bot):
+    """Har soatda public kanallardan yangi postlarni o'qish va muhimlarini ulashish."""
+    import aiohttp as _aiohttp
+
+    if not Config.WATCH_CHANNELS or not Config.NEWS_TARGET_CHAT:
+        return
+
+    # Oxirgi ko'rilgan post ID larni saqlash
+    last_seen: dict[str, int] = {}
+
+    while True:
+        await asyncio.sleep(3600)  # Har 1 soatda
+        log.info("Kanal polling boshlandi: %s", Config.WATCH_CHANNELS)
+
+        for channel in Config.WATCH_CHANNELS:
+            channel = channel.strip().replace("@", "")
+            if not channel:
+                continue
+
+            try:
+                url = f"https://t.me/s/{channel}"
+                async with _aiohttp.ClientSession() as session:
+                    async with session.get(url, timeout=_aiohttp.ClientTimeout(total=15)) as resp:
+                        if resp.status != 200:
+                            continue
+                        html = await resp.text()
+
+                # Barcha postlarni topish
+                posts = re.findall(
+                    r'data-post="([^"]+)"[^>]*>.*?'
+                    r'class="tgme_widget_message_text[^"]*"[^>]*>(.*?)</div>',
+                    html, re.DOTALL
+                )
+
+                if not posts:
+                    continue
+
+                for post_id_str, raw_html in posts[-5:]:  # Oxirgi 5 ta
+                    # Post ID ni olish
+                    try:
+                        post_num = int(post_id_str.split("/")[-1])
+                    except (ValueError, IndexError):
+                        continue
+
+                    # Oldin ko'rilganmi
+                    if channel in last_seen and post_num <= last_seen[channel]:
+                        continue
+
+                    # HTML tozalash
+                    text = re.sub(r'<br\s*/?>', '\n', raw_html)
+                    text = re.sub(r'<[^>]+>', '', text).strip()
+
+                    if not text or len(text) < 20:
+                        continue
+
+                    # Regex prefilter
+                    RELEVANT_KEYWORDS = re.compile(
+                        r'(imtihon|sessia|deadline|grant|stipendiya|konferensiya|olimpiada|'
+                        r'konkurs|arizalar|ro\'yxat|muddati|talaba|magistr|bakalavr|'
+                        r'sharqshunoslik|TSUOS|o\'quv|dars|fakultet|dekan|rektor|'
+                        r'ta\'lim|o\'zbekiston|toshkent|universitet|akademiya|'
+                        r'ish o\'rni|vakansiya|amaliyot|stajiro|sertifikat)',
+                        re.IGNORECASE
+                    )
+
+                    if not RELEVANT_KEYWORDS.search(text):
+                        continue
+
+                    log.info("Kanal polling: @%s/%d — tegishli post topildi", channel, post_num)
+
+                    # Bazaga saqlash
+                    from datetime import datetime
+                    await db.save_message(
+                        chat_id=0,
+                        message_id=post_num,
+                        user_id=None,
+                        username=f"@{channel}",
+                        first_name=channel,
+                        text=text,
+                        reply_to=None,
+                        timestamp=datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+                    )
+
+                    # AI bilan tekshirish
+                    if not Config.GEMINI_API_KEYS:
+                        continue
+
+                    classify_prompt = f"""Quyidagi xabar TSUOS sharqshunoslik talabalariga tegishlimi?
+Tegishli = imtihon, dars, stipendiya, grant, konferensiya, olimpiada, universitet yangiliklari.
+TEGISHLI EMAS = siyosat, sport, reklama, chet el yangiliklari.
+Javob FAQAT: TEGISHLI yoki YO'Q
+
+Kanal: @{channel}
+Xabar: {text[:500]}"""
+
+                    response = await ai.chat(
+                        "Sen klassifikator. TEGISHLI yoki YO'Q deb javob ber.",
+                        [{"role": "user", "text": classify_prompt}],
+                    )
+
+                    if response and "TEGISHLI" in response.upper():
+                        share_prompt = f"""Kanaldan talabalar uchun tegishli yangilik keldi. Buni guruhga ulash.
+Kanal: @{channel}
+Link: https://t.me/{channel}/{post_num}
+Yangilik: {text[:1000]}
+
+QISQA yoz, 2-3 jumla. Samimiy uslubda. Linkni qo'sh."""
+
+                        share_text = await ai.chat(
+                            "Sen guruh a'zosi. Yangilikni tabiiy tilda ulash.",
+                            [{"role": "user", "text": share_prompt}],
+                        )
+
+                        if share_text and "[NO_ACTION]" not in share_text:
+                            try:
+                                await bot.send_message(
+                                    Config.NEWS_TARGET_CHAT,
+                                    share_text.strip(),
+                                    parse_mode="HTML",
+                                )
+                                log.info("Polling: yangilik ulashildi @%s/%d", channel, post_num)
+                            except Exception as e:
+                                log.error("Polling ulashish xatosi: %s", e)
+
+                # Oxirgi ko'rilgan post ni yangilash
+                if posts:
+                    try:
+                        last_num = int(posts[-1][0].split("/")[-1])
+                        last_seen[channel] = last_num
+                    except (ValueError, IndexError):
+                        pass
+
+            except Exception as e:
+                log.error("Kanal polling xatosi @%s: %s", channel, e)
+
+
+# ── Start ─────────────────────────────────────────────────────
 
 async def start_bot():
     global db, ai, memory, tools
@@ -708,5 +844,6 @@ async def start_bot():
 
     asyncio.create_task(reminder_loop(bot))
     asyncio.create_task(daily_digest_loop(bot))
+    asyncio.create_task(channel_poll_loop(bot))
 
     await dp.start_polling(bot)
