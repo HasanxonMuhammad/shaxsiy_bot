@@ -151,11 +151,16 @@ async def fetch_url_content(url: str) -> str:
 async def fetch_telegram_post(url: str) -> str:
     """Telegram post linkidan kontentni olish (t.me/channel/post_id)."""
     try:
-        # t.me/s/ formatga o'tkazish — public preview
         import aiohttp as _aiohttp
-        embed_url = url.replace("t.me/", "t.me/s/")
-        if "/s/s/" in embed_url:
-            embed_url = url.replace("t.me/", "t.me/s/")
+        # Post ID ni ajratish
+        post_match = re.search(r't\.me/([^/]+)/(\d+)', url)
+        if not post_match:
+            return ""
+        channel = post_match.group(1)
+        post_id = post_match.group(2)
+
+        # Embed widget — aniq bitta post
+        embed_url = f"https://t.me/{channel}/{post_id}?embed=1&mode=tme"
 
         async with _aiohttp.ClientSession() as session:
             async with session.get(embed_url, timeout=_aiohttp.ClientTimeout(total=10)) as resp:
@@ -164,14 +169,12 @@ async def fetch_telegram_post(url: str) -> str:
                 html = await resp.text()
 
         # HTML dan matnni ajratish
-        # <div class="tgme_widget_message_text" ...>TEXT</div>
         text_match = re.search(
             r'class="tgme_widget_message_text[^"]*"[^>]*>(.*?)</div>',
             html, re.DOTALL
         )
         if text_match:
             text = text_match.group(1)
-            # HTML teglarni tozalash
             text = re.sub(r'<br\s*/?>', '\n', text)
             text = re.sub(r'<[^>]+>', '', text)
             text = text.strip()
@@ -540,6 +543,19 @@ async def on_channel_post(message: types.Message):
         return
 
     log.info("Kanal post: @%s: %s", username, text[:80])
+
+    # Kanal postini bazaga saqlash — keyinroq qidirish uchun
+    from datetime import datetime
+    await db.save_message(
+        chat_id=chat.id,
+        message_id=message.message_id,
+        user_id=None,
+        username=f"@{username}",
+        first_name=chat.title or username,
+        text=text,
+        reply_to=None,
+        timestamp=datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+    )
 
     # AI bilan muhimligini aniqlash
     if not Config.GEMINI_API_KEYS:

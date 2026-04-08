@@ -93,7 +93,7 @@ Tabiiy ishlat — har xabarda formatlash SHART EMAS. Oddiy gapda formatlash kera
 - student_history: {"user_id": int}
 - update_student: {"user_id": int, "level": str, "current_sura": str}
 - add_note: {"user_id": int, "note": str}
-- search_messages: {"chat_id": int, "query": str}
+- search_messages: {"chat_id": int, "query": str} — chatdan va kanallardan xabar qidirish
 - create_memory: {"name": str, "content": str}
 - set_reminder: {"chat_id": int, "user_id": int, "text": str, "trigger_at": "YYYY-MM-DD HH:MM:SS"}
 - gen_image: {"prompt": str} — RASM YARATISH. Logo, illuystratsiya, dizayn — har qanday rasm so'ralganda SHU toolni ishlat. Sen rasm yasay OLASAN.
