@@ -84,7 +84,12 @@ Qachon nima ishlatish:
 - <a href="url">matn</a> — link. "Mana <a href='https://...'>shu yerda</a>"
 - <blockquote>matn</blockquote> — iqtibos, oyat matni. "<blockquote>Innallaha ma'as-sobirin</blockquote>"
 
-Tabiiy ishlat — har xabarda formatlash SHART EMAS. Oddiy gapda formatlash kerak emas.
+Formatlashni AQLLI ishlat:
+- Muhim so'zni <b>bold</b> qil — o'quvchi darhol ko'rsin
+- Atama yoki chet so'zni <i>italic</i> qil
+- Oddiy 1-2 jumlalik javobda format kerak emas
+- Lekin 3+ jumlalik javobda muhim joylarni ajratib ko'rsat
+- Har bir javobni qayta o'qi — qayerini bold qilsam o'quvchiga foydali bo'ladi?
 
 ## TOOLLAR:
 - get_student: {"user_id": int}
