@@ -36,7 +36,7 @@ class HadisRAG:
         return result
 
     def search(self, query: str, limit: int = 5) -> str:
-        """Hadis qidirish — FTS5 + LIKE fallback. Natija: formatlangan matn."""
+        """Hadis qidirish — FTS5 (krill + lotin). Natija: formatlangan matn."""
         if not self._ok:
             return ""
         if not query.strip():
@@ -47,52 +47,33 @@ class HadisRAG:
             conn.row_factory = sqlite3.Row
             cur = conn.cursor()
 
-            # 1) FTS5 MATCH qidirish
-            try:
-                cur.execute(
-                    """
-                    SELECT h.kitob_nomi, h.sarlavha, h.arabcha, h.uzbekcha,
-                           h.hadis_raqam, bm25(hadis_fts) AS score
-                    FROM hadis_fts
-                    JOIN hadislar h ON hadis_fts.rowid = h.id
-                    WHERE hadis_fts MATCH ?
-                    ORDER BY score
-                    LIMIT ?
-                    """,
-                    (query, limit),
-                )
-                rows = cur.fetchall()
-            except Exception:
-                rows = []
+            rows = []
+            # Qidirish variantlari: asl so'z + krill versiyasi
+            queries_to_try = [query]
+            cyrillic_q = self._to_cyrillic(query)
+            if cyrillic_q != query.lower():
+                queries_to_try.append(cyrillic_q)
 
-            # 2) FTS topilmasa — LIKE bilan qidirish (krill transliteratsiya)
-            if not rows:
-                cyrillic_q = self._to_cyrillic(query)
-                like_pattern = f"%{cyrillic_q}%"
-                cur.execute(
-                    """
-                    SELECT kitob_nomi, sarlavha, arabcha, uzbekcha, hadis_raqam
-                    FROM hadislar
-                    WHERE uzbekcha LIKE ? OR sarlavha LIKE ? OR arabcha LIKE ?
-                    LIMIT ?
-                    """,
-                    (like_pattern, like_pattern, like_pattern, limit),
-                )
-                rows = cur.fetchall()
-
-            # 3) Asl so'z bilan ham LIKE qidirish
-            if not rows:
-                like_pattern = f"%{query}%"
-                cur.execute(
-                    """
-                    SELECT kitob_nomi, sarlavha, arabcha, uzbekcha, hadis_raqam
-                    FROM hadislar
-                    WHERE uzbekcha LIKE ? OR sarlavha LIKE ? OR arabcha LIKE ?
-                    LIMIT ?
-                    """,
-                    (like_pattern, like_pattern, like_pattern, limit),
-                )
-                rows = cur.fetchall()
+            # FTS5 MATCH qidirish (har bir variant)
+            for q in queries_to_try:
+                if rows:
+                    break
+                try:
+                    cur.execute(
+                        """
+                        SELECT h.kitob_nomi, h.sarlavha, h.arabcha, h.uzbekcha,
+                               h.hadis_raqam, bm25(hadis_fts) AS score
+                        FROM hadis_fts
+                        JOIN hadislar h ON hadis_fts.rowid = h.id
+                        WHERE hadis_fts MATCH ?
+                        ORDER BY score
+                        LIMIT ?
+                        """,
+                        (q, limit),
+                    )
+                    rows = cur.fetchall()
+                except Exception:
+                    pass
 
             conn.close()
 
