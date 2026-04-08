@@ -1,8 +1,8 @@
 /target
 .env
 .env.*
-data/
-*.db
+data/bot.db
+data/universal_lugat.db
 ChatExport_*
 venv/
 __pycache__/
