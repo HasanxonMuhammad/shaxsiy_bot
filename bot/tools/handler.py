@@ -9,6 +9,7 @@ from bot.db import Database
 from bot.memory import MemoryStore
 from bot.tools.lugat import Lugat
 from bot.tools.kitob import KitobRAG
+from bot.tools.islamic_api import IslamicAPI
 
 log = logging.getLogger(__name__)
 
@@ -49,6 +50,7 @@ class ToolHandler:
         self.lugat = Lugat(lugat_path) if lugat_path.exists() else None
         kitob_path = Config.DATA_DIR / "kitoblar.db"
         self.kitob = KitobRAG(kitob_path)
+        self.islamic = IslamicAPI()
 
     async def execute(self, tool: dict) -> str:
         """SDK pattern: pre-validation → execute → post-logging."""
@@ -120,6 +122,10 @@ class ToolHandler:
                 return self._kitob_search(params)
             case "list_kitoblar":
                 return self._list_kitoblar()
+            case "hadis":
+                return await self._hadis(params)
+            case "quron":
+                return await self._quron(params)
             case _:
                 return f"Noma'lum tool: {name}"
 
@@ -327,6 +333,24 @@ class ToolHandler:
     def _list_kitoblar(self) -> str:
         """Barcha indekslangan kitoblar ro'yxati."""
         return self.kitob.list_books()
+
+    async def _hadis(self, p: dict) -> str:
+        """Hadis qidirish yoki ID bo'yicha olish."""
+        hid = p.get("id")
+        if hid:
+            return await self.islamic.get_hadith_by_id(str(hid))
+        query = p.get("query", "")
+        if not query:
+            return "Hadis qidirish uchun 'query' yoki 'id' kerak"
+        return await self.islamic.search_hadith(query, limit=p.get("limit", 3))
+
+    async def _quron(self, p: dict) -> str:
+        """Qur'on oyati olish."""
+        sura = p.get("sura", 0)
+        if not sura:
+            return "Sura raqami kerak"
+        ayah = p.get("ayah", 0)
+        return await self.islamic.get_ayah(sura, ayah)
 
     async def _mute_chat(self, p: dict) -> str:
         chat_id = p.get("chat_id", 0)
