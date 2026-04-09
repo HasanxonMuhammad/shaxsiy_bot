@@ -151,6 +151,8 @@ class ToolHandler:
                 return await self._delete_message(params)
             case "get_chat_admins":
                 return await self._get_chat_admins(params)
+            case "kanalga_post":
+                return await self._kanalga_post(params)
             case _:
                 return f"Noma'lum tool: {name}"
 
@@ -661,3 +663,18 @@ class ToolHandler:
             return "\n".join(lines) if lines else "Admin topilmadi"
         except Exception as e:
             return f"Xato: {e}"
+
+    async def _kanalga_post(self, p: dict) -> str:
+        """Kanalga post yuborish (blog uchun)."""
+        if not hasattr(self, '_bot') or not self._bot:
+            return "Bot ulanmagan"
+        chat_id = p.get("chat_id", 0)
+        text = p.get("text", "")
+        if not chat_id or not text:
+            return "chat_id va text kerak"
+        try:
+            from aiogram.enums import ParseMode
+            await self._bot.send_message(chat_id, text, parse_mode=ParseMode.HTML)
+            return "Kanalga post yuborildi"
+        except Exception as e:
+            return f"Kanalga post xatosi: {e}"
