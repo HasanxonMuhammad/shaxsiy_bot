@@ -582,14 +582,23 @@ async def on_message(message: types.Message):
     is_bot = user.is_bot if user else False
     bot_me = await tg_bot.me()
     if is_bot:
-        # Boshqa bot yozgan — faqat shu holatlarda javob ber:
-        # 1) Owner buyruq bergan (reply qilib "javob ber" degan)
-        # 2) Botni @mention qilgan (@qamusaibot kabi)
         bot_username = bot_me.username or ""
         mentioned = f"@{bot_username}".lower() in text.lower() if bot_username else False
-        if not mentioned:
+        # Boshqa bot menga reply qilganmi?
+        replied_to_me = False
+        if message.reply_to_message and message.reply_to_message.from_user:
+            replied_to_me = message.reply_to_message.from_user.id == bot_me.id
+        # Javob berish shartlari: @mention YOKI menga reply qilingan
+        if not mentioned and not replied_to_me:
             log.info("Bot xabar (loop himoya): %s dan, o'tkazildi", first_name)
-            # DB ga saqlaymiz lekin javob bermaymiz
+            ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+            await db.save_message(chat_id, message.message_id, user_id, username, first_name, text, None, ts)
+            return
+        # Loop limiti: oxirgi 5 xabarda 2 dan ortiq bot-to-bot bo'lsa — to'xta
+        recent = await db.get_recent_messages(chat_id, 5)
+        bot_msgs = sum(1 for m in recent if m.get("user_id", 0) != Config.OWNER_ID and m.get("username", "").endswith("bot"))
+        if bot_msgs >= 3:
+            log.info("Bot-to-bot loop limiti: 5 xabarda %d bot xabar, to'xtatildi", bot_msgs)
             ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
             await db.save_message(chat_id, message.message_id, user_id, username, first_name, text, None, ts)
             return
