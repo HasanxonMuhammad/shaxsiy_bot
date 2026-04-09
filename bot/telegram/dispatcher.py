@@ -1027,6 +1027,7 @@ async def start_bot():
         namoz_chats = [
             -1003436904722,   # Botlar choyxonasi
             -1002082269999,   # MudarrisAI guruh
+            -1003742825203,   # Mudarris Blog Chat (discussion)
         ]
         asyncio.create_task(namoz_scheduler(bot, namoz_chats))
         log.info("Namoz scheduler ishga tushdi: %s", namoz_chats)
