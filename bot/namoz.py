@@ -1,136 +1,134 @@
 """
-Namoz vaqtlari eslatma tizimi — Toshkent, Aladhan API.
+Namoz vaqtlari eslatma tizimi — namozvaqti.uz (O'zbekiston rasmiy).
 Har bir namoz vaqtida guruh va kanalga chiroyli eslatma yuboradi.
 """
 import asyncio
 import logging
+import re
 from datetime import datetime, timedelta
 
 import aiohttp
 
 log = logging.getLogger(__name__)
 
-ALADHAN_URL = "https://api.aladhan.com/v1/timingsByCity"
-CITY = "Tashkent"
-COUNTRY = "Uzbekistan"
-METHOD = 2  # ISNA
+NAMOZVAQTI_URL = "https://namozvaqti.uz/shahar/toshkent"
 
-# Namoz nomlari va emoji
-NAMOZ_INFO = {
-    "Fajr":    {"uz": "Bomdod", "emoji": "🌅", "icon": "☪️"},
-    "Dhuhr":   {"uz": "Peshin", "emoji": "☀️", "icon": "☪️"},
-    "Asr":     {"uz": "Asr",    "emoji": "🌤", "icon": "☪️"},
-    "Maghrib": {"uz": "Shom",   "emoji": "🌅", "icon": "☪️"},
-    "Isha":    {"uz": "Xufton", "emoji": "🌙", "icon": "☪️"},
-}
+# Namoz ro'yxati — idx = namozvaqti.uz dagi times[] massiv indeksi
+NAMOZ_LIST = [
+    {"key": "bomdod", "uz": "Bomdod", "emoji": "🌅", "idx": 0},
+    {"key": "peshin", "uz": "Peshin", "emoji": "☀️", "idx": 2},
+    {"key": "asr",    "uz": "Asr",    "emoji": "🌤", "idx": 3},
+    {"key": "shom",   "uz": "Shom",   "emoji": "🌅", "idx": 4},
+    {"key": "xufton", "uz": "Xufton", "emoji": "🌙", "idx": 5},
+]
 
 # Niso 103 oyati
-NISO_103 = (
-    "إِنَّ ٱلصَّلَوٰةَ كَانَتۡ عَلَى ٱلۡمُؤۡمِنِينَ كِتَٰبٗا مَّوۡقُوتٗا"
-)
+NISO_103 = "إِنَّ ٱلصَّلَوٰةَ كَانَتۡ عَلَى ٱلۡمُؤۡمِنِينَ كِتَٰبٗا مَّوۡقُوتٗا"
 NISO_103_UZ = "Albatta namoz mo'minlarga vaqtida ado etish farz qilingandir"
 
+_cached_times: list[str] = []
+_cached_date: str = ""
 
-_cached_timings = None
-_cached_date = None
 
-
-async def get_prayer_times() -> dict | None:
-    """Bugungi Toshkent namoz vaqtlarini olish (kunlik kesh bilan)."""
-    global _cached_timings, _cached_date
+async def get_prayer_times() -> list[str]:
+    """namozvaqti.uz dan bugungi vaqtlarni olish (kunlik kesh)."""
+    global _cached_times, _cached_date
     now = datetime.utcnow() + timedelta(hours=5)
     today = now.strftime("%Y-%m-%d")
 
-    # Kesh — kuniga bir marta API chaqirish yetarli
-    if _cached_date == today and _cached_timings:
-        return _cached_timings
+    if _cached_date == today and _cached_times:
+        return _cached_times
 
     try:
-        params = {"city": CITY, "country": COUNTRY, "method": METHOD}
         headers = {"User-Agent": "MudarrisAI/1.0"}
         async with aiohttp.ClientSession() as session:
-            async with session.get(ALADHAN_URL, params=params, headers=headers,
+            async with session.get(NAMOZVAQTI_URL, headers=headers,
                                    timeout=aiohttp.ClientTimeout(total=10)) as resp:
                 if resp.status != 200:
-                    log.error("Aladhan API xato: status %d", resp.status)
-                    return _cached_timings  # eski keshni qaytar
-                data = await resp.json()
-                timings = data.get("data", {}).get("timings", {})
-                if timings:
-                    _cached_timings = timings
-                    _cached_date = today
-                    log.info("Namoz vaqtlari yangilandi: %s", {k: v for k, v in timings.items() if k in NAMOZ_INFO})
-                return timings
+                    log.error("namozvaqti.uz xato: status %d", resp.status)
+                    return _cached_times
+                html = await resp.text()
+
+        # const times = ['04:31', '05:53', '12:29', '17:02', '18:58', '20:16', '04:30']
+        match = re.search(r"const\s+times\s*=\s*\[([^\]]+)\]", html)
+        if not match:
+            log.error("namozvaqti.uz da times[] topilmadi")
+            return _cached_times
+
+        raw = match.group(1)
+        times = re.findall(r"'(\d{2}:\d{2})'", raw)
+        if len(times) >= 6:
+            _cached_times = times
+            _cached_date = today
+            log.info("Namoz vaqtlari yangilandi (namozvaqti.uz): %s",
+                     {n["uz"]: times[n["idx"]] for n in NAMOZ_LIST})
+        return times
+
     except Exception as e:
         log.error("Namoz vaqtlari olishda xato: %s", e)
-        return _cached_timings
+        return _cached_times
 
 
-def format_reminder(namoz_key: str, vaqt: str, hijri_date: str = "") -> str:
+def format_reminder(namoz: dict, vaqt: str) -> str:
     """Chiroyli formatlangan namoz eslatmasi."""
-    info = NAMOZ_INFO.get(namoz_key, {})
-    uz_name = info.get("uz", namoz_key)
-    emoji = info.get("emoji", "🕌")
-
-    text = (
-        f"{emoji} <b>{uz_name} namozi vaqti kirdi!</b>\n\n"
+    return (
+        f"{namoz['emoji']} <b>{namoz['uz']} namozi vaqti kirdi!</b>\n\n"
         f"🕐 <b>{vaqt}</b> (Toshkent vaqti)\n\n"
         f"<blockquote>{NISO_103}</blockquote>\n"
         f"<i>{NISO_103_UZ}</i>\n"
         f"<i>(Niso surasi, 103-oyat)</i>"
     )
-    return text
 
 
 async def namoz_scheduler(bot, chat_ids: list[int]):
     """Namoz vaqtlarini kuzatib, vaqti kelganda eslatma yuboradi."""
     log.info("Namoz scheduler ishga tushdi: %s", chat_ids)
-    sent_today = set()  # Bugun qaysi namozlar yuborilgan
+    sent_today: set[str] = set()
+    last_date = ""
 
     while True:
         try:
             now = datetime.utcnow() + timedelta(hours=5)  # Toshkent UTC+5
             current_date = now.strftime("%Y-%m-%d")
 
-            # Yangi kun — sent_today ni tozalash
-            if hasattr(namoz_scheduler, '_last_date') and namoz_scheduler._last_date != current_date:
+            # Yangi kun — sent ni tozalash
+            if last_date != current_date:
                 sent_today.clear()
-            namoz_scheduler._last_date = current_date
+                last_date = current_date
 
-            timings = await get_prayer_times()
-            if not timings:
-                await asyncio.sleep(300)  # 5 daqiqa kutib qayta urinish
+            times = await get_prayer_times()
+            if not times:
+                await asyncio.sleep(60)
                 continue
 
             current_time = now.strftime("%H:%M")
 
-            for namoz_key in NAMOZ_INFO:
-                namoz_time = timings.get(namoz_key, "")
-                if not namoz_time:
+            for namoz in NAMOZ_LIST:
+                if namoz["idx"] >= len(times):
                     continue
-
-                # Vaqtni solishtirish (HH:MM formatda)
-                namoz_hm = namoz_time[:5]  # "04:35 (UTC+5)" -> "04:35"
-                reminder_key = f"{current_date}_{namoz_key}"
+                namoz_hm = times[namoz["idx"]]
+                reminder_key = f"{current_date}_{namoz['key']}"
 
                 if reminder_key in sent_today:
                     continue
 
-                if current_time == namoz_hm or (
-                    # 1 daqiqa ichida bo'lsa ham yuborish (scheduler 30s da tekshiradi)
-                    current_time > namoz_hm and
-                    datetime.strptime(current_time, "%H:%M") - datetime.strptime(namoz_hm, "%H:%M") < timedelta(minutes=2)
-                ):
-                    msg = format_reminder(namoz_key, namoz_hm)
-                    for chat_id in chat_ids:
-                        try:
-                            await bot.send_message(chat_id, msg, parse_mode="HTML")
-                            log.info("Namoz eslatma yuborildi: %s -> %d", namoz_key, chat_id)
-                        except Exception as e:
-                            log.error("Namoz eslatma xatosi: %s -> %d: %s", namoz_key, chat_id, e)
-                    sent_today.add(reminder_key)
+                # Vaqt kelganmi? (aniq yoki 2 daqiqa ichida)
+                if current_time >= namoz_hm:
+                    try:
+                        diff = datetime.strptime(current_time, "%H:%M") - datetime.strptime(namoz_hm, "%H:%M")
+                        if diff <= timedelta(minutes=2):
+                            msg = format_reminder(namoz, namoz_hm)
+                            for chat_id in chat_ids:
+                                try:
+                                    await bot.send_message(chat_id, msg, parse_mode="HTML")
+                                    log.info("Namoz eslatma: %s %s -> %d", namoz["uz"], namoz_hm, chat_id)
+                                except Exception as e:
+                                    log.error("Namoz eslatma xatosi: %s -> %d: %s", namoz["uz"], chat_id, e)
+                            sent_today.add(reminder_key)
+                    except ValueError:
+                        pass
 
         except Exception as e:
             log.error("Namoz scheduler xatosi: %s", e)
 
-        await asyncio.sleep(5)  # Har 5 soniyada tekshirish (API keshlanadi)
+        await asyncio.sleep(5)
