@@ -986,4 +986,14 @@ async def start_bot():
     asyncio.create_task(daily_digest_loop(bot))
     asyncio.create_task(channel_poll_loop(bot))
 
+    # Namoz eslatma — faqat MudarrisAI uchun
+    if "mudarris" in Config.BOT_NAME.lower() or "shaxsiy" in Config.BOT_NAME.lower():
+        from bot.namoz import namoz_scheduler
+        namoz_chats = [
+            -1003436904722,   # Botlar choyxonasi
+            -1002082269999,   # MudarrisAI guruh
+        ]
+        asyncio.create_task(namoz_scheduler(bot, namoz_chats))
+        log.info("Namoz scheduler ishga tushdi: %s", namoz_chats)
+
     await dp.start_polling(bot)
