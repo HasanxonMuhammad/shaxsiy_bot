@@ -111,48 +111,103 @@ class Supervisor:
             return f"O'qish xatosi: {e}"
 
 
-async def health_monitor(bot, owner_id: int, check_interval: int = 300):
-    """Har 5 daqiqada bot sog'lig'ini tekshirish, muammo bo'lsa owner ga xabar."""
+async def health_monitor(bot, owner_id: int, choyxona_id: int = -1003436904722,
+                         check_interval: int = 300):
+    """Mirzo-style monitoring — muammoni aniqlash, tuzatish, xabar berish."""
     log.info("Health monitor ishga tushdi (har %ds)", check_interval)
     sv = Supervisor()
     consecutive_errors = 0
+    reported_issues = set()  # Bir xil muammoni takror xabar qilmaslik
 
     while True:
         try:
             await asyncio.sleep(check_interval)
+            issues = []
+            fixes = []
 
-            # Systemd status tekshirish
+            # 1. Service ishlayaptimi?
             status = sv.check_status()
             if "active (running)" not in status:
                 consecutive_errors += 1
                 if consecutive_errors >= 2:
-                    # Avtomatik restart
                     sv.restart_bots()
-                    try:
-                        await bot.send_message(
-                            owner_id,
-                            f"⚠️ <b>Supervisor xabar:</b>\n\n"
-                            f"Bot to'xtagan edi — avtomatik restart qilindi.\n"
-                            f"Xatolar soni: {consecutive_errors}",
-                            parse_mode="HTML",
-                        )
-                    except Exception:
-                        pass
+                    fixes.append("Bot to'xtagan edi — avtomatik restart qildim")
                     consecutive_errors = 0
             else:
                 consecutive_errors = 0
 
-            # Xatolarni tekshirish
-            errors = sv.check_errors(minutes=check_interval // 60 + 1)
-            if "xato topilmadi" not in errors and "high demand" not in errors.lower():
+            # 2. Xatolar tekshirish (high demand ni o'tkazib yuborish)
+            error_log = sv.check_errors(minutes=check_interval // 60 + 1)
+            if "xato topilmadi" not in error_log:
+                # High demand — normal, xabar qilmaslik
+                non_demand_errors = [
+                    line for line in error_log.split("\n")
+                    if "high demand" not in line.lower()
+                    and "timeout" not in line.lower()
+                    and line.strip()
+                ]
+                if non_demand_errors:
+                    error_summary = "\n".join(non_demand_errors[:5])
+                    issue_key = error_summary[:100]
+                    if issue_key not in reported_issues:
+                        issues.append(f"Xatolar aniqlandi:\n{error_summary}")
+                        reported_issues.add(issue_key)
+
+            # 3. Disk to'lib ketganmi?
+            disk_info = sv.run_cmd("df -h / | tail -1")
+            if disk_info:
+                parts = disk_info.split()
+                if len(parts) >= 5:
+                    usage = parts[4].replace("%", "")
+                    try:
+                        if int(usage) > 90:
+                            issues.append(f"Disk 90% dan oshdi! ({parts[4]})")
+                    except ValueError:
+                        pass
+
+            # 4. RAM tekshirish
+            mem_info = sv.run_cmd("free -m | grep Mem")
+            if mem_info:
+                parts = mem_info.split()
+                if len(parts) >= 3:
+                    try:
+                        total = int(parts[1])
+                        available = int(parts[6]) if len(parts) > 6 else int(parts[3])
+                        if available < total * 0.1:  # 10% dan kam qolsa
+                            issues.append(f"RAM kam qoldi! ({available}MB / {total}MB)")
+                    except (ValueError, IndexError):
+                        pass
+
+            # 5. Bot jarayonlari bormi?
+            procs = sv.run_cmd("pgrep -c -f 'python3.*main.py'")
+            try:
+                proc_count = int(procs.strip())
+                if proc_count < 2:  # 2 ta bot ishlashi kerak
+                    issues.append(f"Faqat {proc_count} bot jarayoni ishlayapti (2 kerak)")
+                    sv.restart_bots()
+                    fixes.append("Etishmayotgan bot jarayonlari uchun restart qildim")
+            except ValueError:
+                pass
+
+            # Choyxonaga xabar yuborish (agar muammo bo'lsa)
+            if issues or fixes:
+                msg_parts = []
+                if fixes:
+                    msg_parts.append("🔧 <b>Tuzatdim:</b>\n" + "\n".join(f"• {f}" for f in fixes))
+                if issues:
+                    msg_parts.append("⚠️ <b>Muammolar:</b>\n" + "\n".join(f"• {i}" for i in issues))
+                msg = "\n\n".join(msg_parts)
                 try:
-                    await bot.send_message(
-                        owner_id,
-                        f"⚠️ <b>Xatolar aniqlandi:</b>\n\n<pre>{errors[:500]}</pre>",
-                        parse_mode="HTML",
-                    )
+                    await bot.send_message(choyxona_id, msg, parse_mode="HTML")
                 except Exception:
-                    pass
+                    try:
+                        await bot.send_message(owner_id, msg, parse_mode="HTML")
+                    except Exception:
+                        pass
+
+            # Eski reported issues tozalash (1 soatdan keyin qayta xabar qilishi mumkin)
+            if len(reported_issues) > 50:
+                reported_issues.clear()
 
         except Exception as e:
             log.error("Health monitor xatosi: %s", e)
