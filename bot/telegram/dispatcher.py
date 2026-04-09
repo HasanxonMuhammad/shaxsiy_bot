@@ -15,6 +15,9 @@ from bot.telegram.spam import SpamFilter
 
 log = logging.getLogger(__name__)
 
+import time as _time_module
+_bot_start_time = _time_module.time()
+
 # ── Reaksiya emojilar ─────────────────────────────────────────
 POSITIVE_REACTIONS = ["👍", "❤", "🔥", "👏", "🤲", "💯", "⭐"]
 QURAN_REACTIONS = ["❤", "🤲", "🔥", "����", "💯"]
@@ -555,18 +558,43 @@ async def on_message(message: types.Message):
 
     # Owner buyruqlari
     if Config.is_owner(user_id) and text.startswith("/"):
-        if text == "/status":
-            await message.reply("✅ Bot ishlayapti! Alhamdulillah 🤲")
-            return
-        if text == "/stats":
+        if text == "/status" or text == "/stats":
+            import time as _time
             s = ai.stats
             students = await db.list_students()
+            # Uptime hisoblash
+            uptime_sec = int(_time.time() - _bot_start_time)
+            uptime_h = uptime_sec // 3600
+            uptime_m = (uptime_sec % 3600) // 60
+            # Model nomi
+            model = Config.GEMINI_MODEL
+            # Xabarlar soni
+            try:
+                cursor = await db._db.execute("SELECT COUNT(*) FROM messages")
+                total_msgs = (await cursor.fetchone())[0]
+            except Exception:
+                total_msgs = "?"
+            # Narx taxminiy (gemini-3.1-pro: ~$1.25/M input, ~$5/M output)
+            tokens = s.total_tokens_approx
+            cost_approx = tokens * 0.000003  # o'rtacha $3/M token
             await message.reply(
-                f"📊 <b>{Config.BOT_NAME}</b>\n"
-                f"🤖 So'rovlar: {s.total_requests} (✅{s.successful} ❌{s.errors} ⏳{s.rate_limited})\n"
-                f"⚡ O'rtacha javob: {s.avg_response_ms:.0f}ms\n"
-                f"👥 O'quvchilar: {len(students)}\n"
-                f"📝 Tokenlar: ~{s.total_tokens_approx:,}",
+                f"<b>📊 {Config.BOT_NAME} — Status</b>\n\n"
+                f"<b>🤖 Model:</b> <code>{model}</code>\n"
+                f"<b>⏱ Uptime:</b> {uptime_h}s {uptime_m}d\n\n"
+                f"<b>📈 So'rovlar:</b>\n"
+                f"  ✅ Muvaffaqiyat: {s.successful}\n"
+                f"  ❌ Xato: {s.errors}\n"
+                f"  ⏳ Rate limit: {s.rate_limited}\n"
+                f"  📊 Jami: {s.total_requests}\n\n"
+                f"<b>⚡ Tezlik:</b> o'rtacha {s.avg_response_ms:.0f}ms\n"
+                f"<b>📝 Tokenlar:</b> ~{tokens:,}\n"
+                f"<b>💰 Taxminiy sarfj:</b> ~${cost_approx:.2f}\n\n"
+                f"<b>👥 O'quvchilar:</b> {len(students)}\n"
+                f"<b>💬 Jami xabarlar:</b> {total_msgs}\n\n"
+                f"<b>🗄 Bazalar:</b>\n"
+                f"  📖 Hadis: 9,059 ta\n"
+                f"  📚 Kitoblar: 12 ta (8,464 parcha)\n"
+                f"  📕 Lug'at: 97,000+ so'z",
                 parse_mode="HTML",
             )
             return
