@@ -153,6 +153,10 @@ class ToolHandler:
                 return await self._get_chat_admins(params)
             case "kanalga_post":
                 return await self._kanalga_post(params)
+            case "read_prompt":
+                return self._read_prompt()
+            case "edit_prompt":
+                return self._edit_prompt(params)
             case _:
                 return f"Noma'lum tool: {name}"
 
@@ -678,3 +682,37 @@ class ToolHandler:
             return "Kanalga post yuborildi"
         except Exception as e:
             return f"Kanalga post xatosi: {e}"
+
+    # ── Prompt o'z-o'zini boshqarish ────────────────────────────
+
+    def _read_prompt(self) -> str:
+        """Joriy system promptni o'qish."""
+        from bot.config import Config
+        from pathlib import Path
+        prompt_path = Path(Config.SYSTEM_PROMPT_FILE)
+        if not prompt_path.exists():
+            return "Prompt fayl topilmadi"
+        text = prompt_path.read_text(encoding="utf-8")
+        # Juda uzun bo'lsa qisqartirish
+        if len(text) > 3000:
+            return text[:3000] + f"\n\n... ({len(text)} belgi, qisqartirildi)"
+        return text
+
+    def _edit_prompt(self, p: dict) -> str:
+        """Promptdagi matnni o'zgartirish. Faqat owner buyurganda."""
+        from bot.config import Config
+        from pathlib import Path
+        old = p.get("old", "")
+        new = p.get("new", "")
+        if not old or not new:
+            return "old va new parametrlar kerak"
+        prompt_path = Path(Config.SYSTEM_PROMPT_FILE)
+        if not prompt_path.exists():
+            return "Prompt fayl topilmadi"
+        text = prompt_path.read_text(encoding="utf-8")
+        if old not in text:
+            return f"'{old[:50]}...' matni promptda topilmadi"
+        text = text.replace(old, new, 1)
+        prompt_path.write_text(text, encoding="utf-8")
+        log.info("Prompt o'zgartirildi: '%s' → '%s'", old[:50], new[:50])
+        return f"Prompt yangilandi. O'zgartirish: '{old[:30]}...' → '{new[:30]}...'. /reset bilan sessiyani yangilang."
