@@ -914,6 +914,7 @@ async def start_bot():
     buffer.on_flush = process_messages
 
     bot = Bot(token=Config.TELEGRAM_TOKEN)
+    tools._bot = bot  # guruhga_yoz tool uchun
     dp["bot"] = bot
 
     log.info("📖 %s ishga tushdi! Bismillah! 🤲", Config.BOT_NAME)

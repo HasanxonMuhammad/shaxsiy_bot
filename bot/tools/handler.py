@@ -125,6 +125,8 @@ class ToolHandler:
                 return self._kitob_search(params)
             case "list_kitoblar":
                 return self._list_kitoblar()
+            case "guruhga_yoz":
+                return await self._guruhga_yoz(params)
             case "hadis":
                 return await self._hadis(params)
             case "hadis_kitoblar":
@@ -379,6 +381,22 @@ class ToolHandler:
         until = (datetime.utcnow() + timedelta(minutes=duration_min)).strftime("%Y-%m-%d %H:%M:%S")
         await self.db.mute_chat(chat_id, until, p.get("reason", ""))
         return f"🔇 Chat {duration_min} daqiqaga o'chirildi"
+
+    async def _guruhga_yoz(self, p: dict) -> str:
+        """Guruhga xabar yuborish (owner buyrug'i)."""
+        chat_id = p.get("chat_id", 0)
+        text = p.get("text", "")
+        if not chat_id or not text:
+            return "chat_id va text kerak"
+        # _bot ni dispatcher o'rnatadi
+        if not hasattr(self, '_bot') or not self._bot:
+            return "Bot ulanmagan"
+        try:
+            from aiogram.enums import ParseMode
+            await self._bot.send_message(chat_id, text, parse_mode=ParseMode.HTML)
+            return f"Guruhga yuborildi"
+        except Exception as e:
+            return f"Yuborishda xato: {e}"
 
     async def _unmute_chat(self, p: dict) -> str:
         chat_id = p.get("chat_id", 0)
