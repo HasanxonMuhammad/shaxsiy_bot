@@ -31,20 +31,39 @@ NISO_103 = (
 NISO_103_UZ = "Albatta namoz mo'minlarga vaqtida ado etish farz qilingandir"
 
 
+_cached_timings = None
+_cached_date = None
+
+
 async def get_prayer_times() -> dict | None:
-    """Bugungi Toshkent namoz vaqtlarini olish."""
+    """Bugungi Toshkent namoz vaqtlarini olish (kunlik kesh bilan)."""
+    global _cached_timings, _cached_date
+    now = datetime.utcnow() + timedelta(hours=5)
+    today = now.strftime("%Y-%m-%d")
+
+    # Kesh — kuniga bir marta API chaqirish yetarli
+    if _cached_date == today and _cached_timings:
+        return _cached_timings
+
     try:
         params = {"city": CITY, "country": COUNTRY, "method": METHOD}
+        headers = {"User-Agent": "MudarrisAI/1.0"}
         async with aiohttp.ClientSession() as session:
-            async with session.get(ALADHAN_URL, params=params,
+            async with session.get(ALADHAN_URL, params=params, headers=headers,
                                    timeout=aiohttp.ClientTimeout(total=10)) as resp:
                 if resp.status != 200:
-                    return None
+                    log.error("Aladhan API xato: status %d", resp.status)
+                    return _cached_timings  # eski keshni qaytar
                 data = await resp.json()
-                return data.get("data", {}).get("timings", {})
+                timings = data.get("data", {}).get("timings", {})
+                if timings:
+                    _cached_timings = timings
+                    _cached_date = today
+                    log.info("Namoz vaqtlari yangilandi: %s", {k: v for k, v in timings.items() if k in NAMOZ_INFO})
+                return timings
     except Exception as e:
         log.error("Namoz vaqtlari olishda xato: %s", e)
-        return None
+        return _cached_timings
 
 
 def format_reminder(namoz_key: str, vaqt: str, hijri_date: str = "") -> str:
@@ -114,4 +133,4 @@ async def namoz_scheduler(bot, chat_ids: list[int]):
         except Exception as e:
             log.error("Namoz scheduler xatosi: %s", e)
 
-        await asyncio.sleep(30)  # Har 30 soniyada tekshirish
+        await asyncio.sleep(5)  # Har 5 soniyada tekshirish (API keshlanadi)
