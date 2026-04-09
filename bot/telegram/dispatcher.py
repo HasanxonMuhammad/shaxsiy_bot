@@ -1032,4 +1032,8 @@ async def start_bot():
         asyncio.create_task(namoz_scheduler(bot, namoz_chats))
         log.info("Namoz scheduler ishga tushdi: %s", namoz_chats)
 
+    # Health monitor — crash detection, owner ga xabar
+    from bot.supervisor import health_monitor
+    asyncio.create_task(health_monitor(bot, Config.OWNER_ID, check_interval=300))
+
     await dp.start_polling(bot)

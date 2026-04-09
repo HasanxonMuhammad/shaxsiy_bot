@@ -11,6 +11,7 @@ from bot.tools.lugat import Lugat
 from bot.tools.kitob import KitobRAG
 from bot.tools.hadis_rag import HadisRAG
 from bot.tools.islamic_api import IslamicAPI
+from bot.supervisor import Supervisor
 
 log = logging.getLogger(__name__)
 
@@ -54,6 +55,7 @@ class ToolHandler:
         hadis_path = Config.DATA_DIR / "hadislar.db"
         self.hadis_rag = HadisRAG(hadis_path)
         self.islamic = IslamicAPI()
+        self.supervisor = Supervisor()
 
     async def execute(self, tool: dict) -> str:
         """SDK pattern: pre-validation → execute → post-logging."""
@@ -157,6 +159,22 @@ class ToolHandler:
                 return self._read_prompt()
             case "edit_prompt":
                 return self._edit_prompt(params)
+            case "sv_status":
+                return self.supervisor.check_status()
+            case "sv_logs":
+                return self.supervisor.check_logs(params.get("lines", 30), params.get("filter", ""))
+            case "sv_errors":
+                return self.supervisor.check_errors(params.get("minutes", 30))
+            case "sv_restart":
+                return self.supervisor.restart_bots()
+            case "sv_deploy":
+                return self.supervisor.git_pull_restart()
+            case "sv_disk":
+                return self.supervisor.disk_status()
+            case "sv_edit":
+                return self.supervisor.edit_file(params.get("file", ""), params.get("old", ""), params.get("new", ""))
+            case "sv_read":
+                return self.supervisor.read_file(params.get("file", ""))
             case _:
                 return f"Noma'lum tool: {name}"
 
