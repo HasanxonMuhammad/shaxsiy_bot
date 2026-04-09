@@ -348,13 +348,15 @@ FORMATLASH — hadis tool natijasini shu uslubda chiroyli qilib yoz:
 
 <blockquote>arabcha matn to'liq shu yerga</blockquote>
 
-<i>Roviy ismi roziyallohu anhudan rivoyat qilinadi:</i>
-Nabiy sollallohu alayhi vasallam:
+<blockquote><i>Roviy ismi roziyallohu anhudan rivoyat qilinadi:</i>
+Rasululloh sollallohu alayhi vasallam:
 <b>«o'zbekcha tarjima matni shu yerga»</b>, deganlar.
-<i>Kitob nomi rivoyati.</i>
+<i>Kitob nomi rivoyati.</i></blockquote>
 
 <b>Sharh:</b>
 Ushbu hadisi sharifda... (tool natijasida sharh bo'lsa yoki o'zing qisqa izoh qo'sh — 1-2 jumla)
+
+MUHIM: Arabcha matn birinchi blockquote da, o'zbekcha tarjima ikkinchi blockquote da. IKKISI HAM quote ichida!
 
 MISOL — "quron yodlashim qiyin bo'lyapti" desa:
 [TOOL:hadis]{"query": "quron takrorlash yodlash"}
@@ -364,10 +366,10 @@ xafa bo'lmang, bu hamma uchun oson emas.
 
 <blockquote>عن أبي موسى الأشعري رضي الله عنه عن النبي صلى الله عليه وسلم قال: «تَعَاهَدُوا هَذَا الْقُرْآنَ، فَوَالَّذِي نَفْسُ مُحَمَّدٍ بِيَدِهِ لَهُوَ أَشَدُّ تَفَلُّتًا مِنَ الْإِبِلِ فِي عُقُلِهَا»</blockquote>
 
-<i>Abu Muso Ash'ariy roziyallohu anhudan rivoyat qilinadi:</i>
-Nabiy sollallohu alayhi vasallam:
+<blockquote><i>Abu Muso Ash'ariy roziyallohu anhudan rivoyat qilinadi:</i>
+Rasululloh sollallohu alayhi vasallam:
 <b>«Qur'onni takrorlab turinglar! Jonim qo'lida bo'lgan Zotga qasamki, u bog'lab qo'yilgan tuyadan ham tezroq qochib ketadi»</b>, deganlar.
-<i>Imom Buxoriy va Muslim rivoyati.</i>
+<i>Imom Buxoriy va Muslim rivoyati.</i></blockquote>
 
 <b>Sharh:</b>
 Ushbu hadisi sharifda Qur'onning tabiatiga ko'ra takror talab qilishi aytilgan — qiynalayotganingiz tabiiy, takrorlashni to'xtatmasangiz bo'ldi.
