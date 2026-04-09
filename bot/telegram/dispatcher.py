@@ -604,18 +604,28 @@ async def on_message(message: types.Message):
                     pass
             return
 
+    # Kanal post kommentini aniqlash — reply_to_message da kanal postining matni
+    reply_context = ""
+    reply_to = None
+    if message.reply_to_message:
+        reply_to = message.reply_to_message.message_id
+        rm = message.reply_to_message
+        # Kanal postiga komment yoki oddiy reply
+        reply_text = rm.text or rm.caption or ""
+        reply_user = rm.from_user.first_name if rm.from_user else "Kanal"
+        if rm.sender_chat:  # Kanal post
+            reply_user = rm.sender_chat.title or "Kanal"
+        if reply_text:
+            reply_context = f"\n[Reply: {reply_user}: {reply_text[:500]}]"
+
     # DB ga saqlash
     ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-    reply_to = message.reply_to_message.message_id if message.reply_to_message else None
+    full_text = text + reply_context if reply_context else text
 
     await db.save_message(
-        chat_id, message.message_id, user_id, username, first_name, text, reply_to, ts
+        chat_id, message.message_id, user_id, username, first_name, full_text, reply_to, ts
     )
     await db.upsert_user(chat_id, user_id, username, first_name)
-
-    # Guruh a'zosini avtomatik o'quvchi sifatida ro'yxatga olish
-    if not is_private and user_id and not Config.is_owner(user_id):
-        await db.get_or_create_student(user_id, first_name, username)
 
     # Debouncer ga qo'shish
     await buffer.add(
@@ -625,7 +635,7 @@ async def on_message(message: types.Message):
             "user_id": user_id,
             "username": username or first_name,
             "first_name": first_name,
-            "text": text,
+            "text": full_text,
             "media": media_list,
         },
     )
