@@ -11,26 +11,26 @@ import aiohttp
 
 log = logging.getLogger(__name__)
 
-NAMOZVAQTI_URL = "https://namozvaqti.uz/shahar/toshkent"
+MUSLIM_UZ_URL = "https://muslim.uz/oz"
 
-# Namoz ro'yxati — idx = namozvaqti.uz dagi times[] massiv indeksi
+# Namoz nomlari — muslim.uz dagi krillcha nomlarga mos
 NAMOZ_LIST = [
-    {"key": "bomdod", "uz": "Bomdod", "emoji": "🌅", "idx": 0},
-    {"key": "peshin", "uz": "Peshin", "emoji": "☀️", "idx": 2},
-    {"key": "asr",    "uz": "Asr",    "emoji": "🌤", "idx": 3},
-    {"key": "shom",   "uz": "Shom",   "emoji": "🌅", "idx": 4},
-    {"key": "xufton", "uz": "Xufton", "emoji": "🌙", "idx": 5},
+    {"key": "bomdod", "uz": "Bomdod", "cyr": "Бомдод", "emoji": "🌅"},
+    {"key": "peshin", "uz": "Peshin", "cyr": "Пешин",  "emoji": "☀️"},
+    {"key": "asr",    "uz": "Asr",    "cyr": "Аср",    "emoji": "🌤"},
+    {"key": "shom",   "uz": "Shom",   "cyr": "Шом",    "emoji": "🌅"},
+    {"key": "xufton", "uz": "Xufton", "cyr": "Хуфтон", "emoji": "🌙"},
 ]
 
 # Niso 103 oyati
 NISO_103 = "إِنَّ ٱلصَّلَوٰةَ كَانَتۡ عَلَى ٱلۡمُؤۡمِنِينَ كِتَٰبٗا مَّوۡقُوتٗا"
 NISO_103_UZ = "Albatta namoz mo'minlarga vaqtida ado etish farz qilingandir"
 
-_cached_times: list[str] = []
+_cached_times: dict[str, str] = {}
 _cached_date: str = ""
 
 
-async def get_prayer_times() -> list[str]:
+async def get_prayer_times() -> dict[str, str]:
     """namozvaqti.uz dan bugungi vaqtlarni olish (kunlik kesh)."""
     global _cached_times, _cached_date
     now = datetime.utcnow() + timedelta(hours=5)
@@ -40,28 +40,28 @@ async def get_prayer_times() -> list[str]:
         return _cached_times
 
     try:
-        headers = {"User-Agent": "MudarrisAI/1.0"}
+        headers = {"User-Agent": "Mozilla/5.0"}
         async with aiohttp.ClientSession() as session:
-            async with session.get(NAMOZVAQTI_URL, headers=headers,
-                                   timeout=aiohttp.ClientTimeout(total=10)) as resp:
+            async with session.get(MUSLIM_UZ_URL, headers=headers,
+                                   timeout=aiohttp.ClientTimeout(total=10),
+                                   allow_redirects=True) as resp:
                 if resp.status != 200:
-                    log.error("namozvaqti.uz xato: status %d", resp.status)
+                    log.error("muslim.uz xato: status %d", resp.status)
                     return _cached_times
                 html = await resp.text()
 
-        # const times = ['04:31', '05:53', '12:29', '17:02', '18:58', '20:16', '04:30']
-        match = re.search(r"const\s+times\s*=\s*\[([^\]]+)\]", html)
-        if not match:
-            log.error("namozvaqti.uz da times[] topilmadi")
-            return _cached_times
+        # <div>Бомдод</div> <div>04:32</div> formatdan parse
+        times = {}
+        for namoz in NAMOZ_LIST:
+            pattern = rf"{namoz['cyr']}</div>\s*<div>(\d{{2}}:\d{{2}})</div>"
+            match = re.search(pattern, html)
+            if match:
+                times[namoz["key"]] = match.group(1)
 
-        raw = match.group(1)
-        times = re.findall(r"'(\d{2}:\d{2})'", raw)
-        if len(times) >= 6:
+        if times:
             _cached_times = times
             _cached_date = today
-            log.info("Namoz vaqtlari yangilandi (namozvaqti.uz): %s",
-                     {n["uz"]: times[n["idx"]] for n in NAMOZ_LIST})
+            log.info("Namoz vaqtlari yangilandi (muslim.uz): %s", times)
         return times
 
     except Exception as e:
@@ -104,9 +104,9 @@ async def namoz_scheduler(bot, chat_ids: list[int]):
             current_time = now.strftime("%H:%M")
 
             for namoz in NAMOZ_LIST:
-                if namoz["idx"] >= len(times):
+                namoz_hm = times.get(namoz["key"], "")
+                if not namoz_hm:
                     continue
-                namoz_hm = times[namoz["idx"]]
                 reminder_key = f"{current_date}_{namoz['key']}"
 
                 if reminder_key in sent_today:
