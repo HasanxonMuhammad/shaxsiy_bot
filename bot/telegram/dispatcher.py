@@ -578,6 +578,22 @@ async def on_message(message: types.Message):
             await message.reply(f"Chat ID: <code>{chat_id}</code>", parse_mode="HTML")
             return
 
+    # Bot-to-bot loop himoyasi
+    is_bot = user.is_bot if user else False
+    bot_me = await tg_bot.me()
+    if is_bot:
+        # Boshqa bot yozgan — faqat shu holatlarda javob ber:
+        # 1) Owner buyruq bergan (reply qilib "javob ber" degan)
+        # 2) Botni @mention qilgan (@qamusaibot kabi)
+        bot_username = bot_me.username or ""
+        mentioned = f"@{bot_username}".lower() in text.lower() if bot_username else False
+        if not mentioned:
+            log.info("Bot xabar (loop himoya): %s dan, o'tkazildi", first_name)
+            # DB ga saqlaymiz lekin javob bermaymiz
+            ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+            await db.save_message(chat_id, message.message_id, user_id, username, first_name, text, None, ts)
+            return
+
     # Guruh tekshiruvi
     if chat_id < 0:
         log.info("Guruh xabar: chat_id=%d, user=%s", chat_id, username or first_name)
