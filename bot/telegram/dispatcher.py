@@ -249,7 +249,17 @@ async def process_messages(chat_id: int, messages: list[dict]):
         pass
 
     # Session persistence — oldingi suhbat tarixini olish
+    # Kontekst to'lib ketmasligi uchun max 20 turn
     session_history = await db.get_session_history(chat_id, limit=20)
+    # Agar session juda uzaygan bo'lsa — eskisini tozalash
+    full_history = await db.get_session_history(chat_id, limit=100)
+    if len(full_history) > 40:
+        await db.clear_session(chat_id)
+        # Faqat oxirgi 10 ta turnni saqlash
+        for turn in full_history[-10:]:
+            await db.save_session_turn(chat_id, turn["role"], turn["text"])
+        session_history = await db.get_session_history(chat_id, limit=20)
+        log.info("Session auto-reset: %d -> 10 turn (chat %d)", len(full_history), chat_id)
     conversation = []
     for turn in session_history:
         conversation.append({"role": turn["role"], "text": turn["text"]})
@@ -372,6 +382,10 @@ async def _handle_response(bot: Bot, ai: GeminiEngine, db: Database,
              tool_call.get("name") if tool_call else "yo'q")
 
     if tool_call:
+        try:
+            await bot.send_chat_action(chat_id, ChatAction.TYPING)
+        except Exception:
+            pass
         result = await tools.execute(tool_call)
         log.info("Tool %s: %s", tool_call["name"], result[:100])
         import base64 as b64
@@ -461,6 +475,17 @@ async def download_file(bot: Bot, file_id: str) -> bytes:
     buf = BytesIO()
     await bot.download_file(file.file_path, buf)
     return buf.getvalue()
+
+
+# ── Auto-delete join/leave xabarlari ─────────────────────────
+
+@dp.message(F.new_chat_members | F.left_chat_member)
+async def on_join_leave(message: types.Message):
+    """Guruhga kirdi/chiqdi xabarlarini o'chirish — guruhni toza tutish."""
+    try:
+        await message.delete()
+    except Exception:
+        pass  # Admin huquqi bo'lmasa o'chirolmaydi
 
 
 # ── Handlers ──────────────────────────────────────────────────

@@ -135,6 +135,22 @@ class ToolHandler:
                 return self.hadis_rag.get_random()
             case "quron":
                 return await self._quron(params)
+            case "query":
+                return await self._query(params)
+            case "send_poll":
+                return await self._send_poll(params)
+            case "ban_user":
+                return await self._ban_user(params)
+            case "mute_user":
+                return await self._mute_user(params)
+            case "kick_user":
+                return await self._kick_user(params)
+            case "unban_user":
+                return await self._unban_user(params)
+            case "delete_message":
+                return await self._delete_message(params)
+            case "get_chat_admins":
+                return await self._get_chat_admins(params)
             case _:
                 return f"Noma'lum tool: {name}"
 
@@ -491,3 +507,157 @@ class ToolHandler:
         except Exception as e:
             log.error("TTS xatosi: %s", e)
             return f"TTS xatosi: {e}"
+
+    # ── Yangi toollar (Claudir pattern) ──────────────────────────
+
+    def _is_owner(self, user_id: int) -> bool:
+        from bot.config import Config
+        return Config.is_owner(user_id)
+
+    async def _query(self, p: dict) -> str:
+        """Owner uchun read-only SQL so'rov."""
+        sql = p.get("sql", "").strip()
+        if not sql:
+            return "SQL so'rov kerak"
+        # Faqat SELECT ruxsat
+        if not sql.upper().startswith("SELECT"):
+            return "Faqat SELECT so'rovlar ruxsat berilgan"
+        try:
+            cursor = await self.db._db.execute(sql)
+            rows = await cursor.fetchall()
+            if not rows:
+                return "Natija bo'sh"
+            cols = [d[0] for d in cursor.description]
+            lines = [" | ".join(cols)]
+            lines.append("-" * len(lines[0]))
+            for row in rows[:20]:  # Max 20 qator
+                lines.append(" | ".join(str(v) for v in row))
+            if len(rows) > 20:
+                lines.append(f"... (jami {len(rows)} qator)")
+            return "\n".join(lines)
+        except Exception as e:
+            return f"SQL xato: {e}"
+
+    async def _send_poll(self, p: dict) -> str:
+        """Guruhga so'rovnoma yuborish."""
+        if not hasattr(self, '_bot') or not self._bot:
+            return "Bot ulanmagan"
+        chat_id = p.get("chat_id", 0)
+        question = p.get("question", "")
+        options = p.get("options", [])
+        if not chat_id or not question or len(options) < 2:
+            return "chat_id, question va kamida 2 ta option kerak"
+        try:
+            from aiogram.types import InputPollOption
+            poll_options = [InputPollOption(text=o) for o in options[:10]]
+            await self._bot.send_poll(
+                chat_id, question=question, options=poll_options,
+                is_anonymous=p.get("anonymous", True),
+            )
+            return "So'rovnoma yuborildi"
+        except Exception as e:
+            return f"So'rovnoma xatosi: {e}"
+
+    async def _ban_user(self, p: dict) -> str:
+        """Foydalanuvchini guruhdan ban qilish."""
+        if not hasattr(self, '_bot') or not self._bot:
+            return "Bot ulanmagan"
+        chat_id = p.get("chat_id", 0)
+        user_id = p.get("user_id", 0)
+        if not chat_id or not user_id:
+            return "chat_id va user_id kerak"
+        # Owner himoyasi
+        if self._is_owner(user_id):
+            return "Owner ni ban qilib bo'lmaydi"
+        try:
+            await self._bot.ban_chat_member(chat_id, user_id)
+            return f"Foydalanuvchi {user_id} ban qilindi"
+        except Exception as e:
+            return f"Ban xatosi: {e}"
+
+    async def _mute_user(self, p: dict) -> str:
+        """Foydalanuvchini guruhda ovozini o'chirish."""
+        if not hasattr(self, '_bot') or not self._bot:
+            return "Bot ulanmagan"
+        chat_id = p.get("chat_id", 0)
+        user_id = p.get("user_id", 0)
+        duration = p.get("duration_minutes", 60)
+        if not chat_id or not user_id:
+            return "chat_id va user_id kerak"
+        if self._is_owner(user_id):
+            return "Owner ni mute qilib bo'lmaydi"
+        try:
+            from datetime import datetime, timedelta
+            from aiogram.types import ChatPermissions
+            until = datetime.utcnow() + timedelta(minutes=duration)
+            await self._bot.restrict_chat_member(
+                chat_id, user_id,
+                permissions=ChatPermissions(can_send_messages=False),
+                until_date=until,
+            )
+            return f"Foydalanuvchi {user_id} {duration} daqiqaga mute qilindi"
+        except Exception as e:
+            return f"Mute xatosi: {e}"
+
+    async def _kick_user(self, p: dict) -> str:
+        """Foydalanuvchini guruhdan chiqarish (ban emas)."""
+        if not hasattr(self, '_bot') or not self._bot:
+            return "Bot ulanmagan"
+        chat_id = p.get("chat_id", 0)
+        user_id = p.get("user_id", 0)
+        if not chat_id or not user_id:
+            return "chat_id va user_id kerak"
+        if self._is_owner(user_id):
+            return "Owner ni chiqarib bo'lmaydi"
+        try:
+            await self._bot.ban_chat_member(chat_id, user_id)
+            await self._bot.unban_chat_member(chat_id, user_id)
+            return f"Foydalanuvchi {user_id} chiqarildi"
+        except Exception as e:
+            return f"Kick xatosi: {e}"
+
+    async def _unban_user(self, p: dict) -> str:
+        """Ban olib tashlash."""
+        if not hasattr(self, '_bot') or not self._bot:
+            return "Bot ulanmagan"
+        chat_id = p.get("chat_id", 0)
+        user_id = p.get("user_id", 0)
+        if not chat_id or not user_id:
+            return "chat_id va user_id kerak"
+        try:
+            await self._bot.unban_chat_member(chat_id, user_id)
+            return f"Foydalanuvchi {user_id} ban olib tashlandi"
+        except Exception as e:
+            return f"Unban xatosi: {e}"
+
+    async def _delete_message(self, p: dict) -> str:
+        """Xabarni o'chirish."""
+        if not hasattr(self, '_bot') or not self._bot:
+            return "Bot ulanmagan"
+        chat_id = p.get("chat_id", 0)
+        message_id = p.get("message_id", 0)
+        if not chat_id or not message_id:
+            return "chat_id va message_id kerak"
+        try:
+            await self._bot.delete_message(chat_id, message_id)
+            return "Xabar o'chirildi"
+        except Exception as e:
+            return f"O'chirish xatosi: {e}"
+
+    async def _get_chat_admins(self, p: dict) -> str:
+        """Guruh adminlarini ko'rish."""
+        if not hasattr(self, '_bot') or not self._bot:
+            return "Bot ulanmagan"
+        chat_id = p.get("chat_id", 0)
+        if not chat_id:
+            return "chat_id kerak"
+        try:
+            admins = await self._bot.get_chat_administrators(chat_id)
+            lines = []
+            for a in admins:
+                u = a.user
+                role = "owner" if a.status == "creator" else "admin"
+                lines.append(f"{u.first_name} (@{u.username or '?'}) — {role} [ID: {u.id}]")
+            return "\n".join(lines) if lines else "Admin topilmadi"
+        except Exception as e:
+            return f"Xato: {e}"
