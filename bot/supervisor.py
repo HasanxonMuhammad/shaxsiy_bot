@@ -138,13 +138,14 @@ async def health_monitor(bot, owner_id: int, choyxona_id: int = -1003436904722,
 
             # 2. Xatolar tekshirish (high demand ni o'tkazib yuborish)
             error_log = sv.check_errors(minutes=check_interval // 60 + 1)
-            if "xato topilmadi" not in error_log:
-                # High demand — normal, xabar qilmaslik
+            if "xato topilmadi" not in error_log and "(bo'sh natija)" not in error_log:
+                # Faqat haqiqiy xatolarni filtrlash
                 non_demand_errors = [
                     line for line in error_log.split("\n")
                     if "high demand" not in line.lower()
                     and "timeout" not in line.lower()
-                    and line.strip()
+                    and "Oxirgi" not in line  # header ni o'tkazish
+                    and "error" in line.lower() or "xato" in line.lower() or "crash" in line.lower()
                 ]
                 if non_demand_errors:
                     error_summary = "\n".join(non_demand_errors[:5])
