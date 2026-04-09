@@ -24,6 +24,8 @@ class HadisRAG:
         "q": "қ", "r": "р", "s": "с", "t": "т", "u": "у",
         "v": "в", "x": "х", "y": "й", "z": "з", "w": "в",
         "sh": "ш", "ch": "ч", "ng": "нг", "o'": "ў", "g'": "ғ",
+        "ya": "я", "yu": "ю", "ye": "е", "yo": "ё",
+        "ts": "ц", "yo'": "йў",
     }
 
     def _to_cyrillic(self, text: str) -> str:
@@ -74,6 +76,19 @@ class HadisRAG:
                     rows = cur.fetchall()
                 except Exception:
                     pass
+
+            # FTS5 topilmasa — LIKE fallback (faqat uzbekcha, tez)
+            if not rows:
+                cyrillic_q = self._to_cyrillic(query)
+                for like_q in [cyrillic_q, query]:
+                    if rows:
+                        break
+                    cur.execute(
+                        """SELECT kitob_nomi, sarlavha, arabcha, uzbekcha, hadis_raqam
+                           FROM hadislar WHERE uzbekcha LIKE ? LIMIT ?""",
+                        (f"%{like_q}%", limit),
+                    )
+                    rows = cur.fetchall()
 
             conn.close()
 
