@@ -61,6 +61,9 @@ class EngineStats:
         self.last_request_time = time.time()
 
 
+FALLBACK_MODEL = "gemini-2.5-flash"
+
+
 class GeminiEngine:
     def __init__(self, api_keys: list[str], model: str = "gemini-2.5-flash"):
         self._keys = api_keys
@@ -210,6 +213,22 @@ class GeminiEngine:
                 log.error("Gemini xatosi: %s", str(e)[:200])
                 self.stats.errors += 1
                 return ""
+
+        # Fallback — asosiy model ishlamasa, gemini-2.5-flash bilan urinish
+        if self._model_name != FALLBACK_MODEL:
+            log.warning("Asosiy model (%s) ishlamadi — %s ga fallback", self._model_name, FALLBACK_MODEL)
+            fallback_url = API_URL.format(model=FALLBACK_MODEL, key=self._keys[self._current_key])
+            try:
+                async with http.post(fallback_url, json=body) as resp:
+                    data = await resp.json()
+                if "candidates" in data:
+                    parts = [p["text"] for p in data["candidates"][0]["content"]["parts"] if "text" in p]
+                    text = "\n".join(parts)
+                    self.stats.record(0, True, len(text))
+                    log.info("Fallback (%s) javob: %d belgi", FALLBACK_MODEL, len(text))
+                    return text
+            except Exception as e:
+                log.error("Fallback ham ishlamadi: %s", e)
 
         log.error("Barcha urinishlar muvaffaqiyatsiz (%d)", total_keys * MAX_RETRIES)
         return ""
