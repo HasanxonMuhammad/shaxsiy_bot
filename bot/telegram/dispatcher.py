@@ -602,8 +602,15 @@ async def on_message(message: types.Message):
             await db.clear_session(chat_id)
             await message.reply("🔄 Suhbat tarixi tozalandi. Yangi suhbat boshlanadi.")
             return
-        if text == "/chatid":
-            await message.reply(f"Chat ID: <code>{chat_id}</code>", parse_mode="HTML")
+        if text == "/chatid" or text == "id sini ayt":
+            info = f"Chat ID: <code>{chat_id}</code>"
+            if message.reply_to_message:
+                rm = message.reply_to_message
+                if rm.forward_from_chat:
+                    info += f"\nForward kanal: <code>{rm.forward_from_chat.id}</code> ({rm.forward_from_chat.title})"
+                if rm.from_user:
+                    info += f"\nUser ID: <code>{rm.from_user.id}</code> ({rm.from_user.first_name})"
+            await message.reply(info, parse_mode="HTML")
             return
 
     # Botlar choyxonasi — ichki guruh, hamma xabarga javob beradi
