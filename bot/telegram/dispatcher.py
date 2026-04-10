@@ -614,7 +614,7 @@ async def on_message(message: types.Message):
             return
 
     # Botlar choyxonasi + free chat guruhlar — hamma xabarga javob beradi
-    FREE_CHAT_GROUPS = {-1003436904722, -1003648834056}  # choyxona + nodira guruhi
+    FREE_CHAT_GROUPS = {-1003436904722, -1003648834056, -1002401618185}  # choyxona + nodira + xonai saodat
     is_bot = user.is_bot if user else False
     bot_me = await tg_bot.me()
 
@@ -1032,10 +1032,18 @@ async def start_bot():
         asyncio.create_task(namoz_scheduler(bot, namoz_chats))
         log.info("Namoz scheduler ishga tushdi: %s", namoz_chats)
 
-    # Inner voice — bot o'zi xohlagan paytda yozadi (choyxonada)
+    # Inner voice — choyxona
     from bot.inner_voice import inner_voice_loop
     BOTLAR_CHOYXONASI_ID = -1003436904722
     asyncio.create_task(inner_voice_loop(bot, ai, BOTLAR_CHOYXONASI_ID, Config.BOT_NAME))
+
+    # Inner voice — Xonai saodat (Mudarris + Olima)
+    XONAI_SAODAT_ID = -1002401618185
+    if "mudarris" in Config.BOT_NAME.lower() or "olima" in Config.BOT_NAME.lower():
+        asyncio.create_task(inner_voice_loop(
+            bot, ai, XONAI_SAODAT_ID, Config.BOT_NAME,
+            min_hours=1.5, max_hours=4.0
+        ))
 
     # Health monitor o'chirilgan — owner so'ramagan
 
