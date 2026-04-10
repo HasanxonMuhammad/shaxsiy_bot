@@ -13,6 +13,7 @@ bot_dir = os.path.dirname(os.path.abspath(__file__))
 bots = [
     {"name": "ShaxsiyBot", "env": ".env"},
     {"name": "Super Boshliq", "env": ".env.superboshliq"},
+    {"name": "Aziza", "env": ".env.aziza"},
 ]
 
 processes = []
