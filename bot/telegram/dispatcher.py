@@ -1037,9 +1037,6 @@ async def start_bot():
     BOTLAR_CHOYXONASI_ID = -1003436904722
     asyncio.create_task(inner_voice_loop(bot, ai, BOTLAR_CHOYXONASI_ID, Config.BOT_NAME))
 
-    # Health monitor — faqat MudarrisAI uchun, owner shaxsiy chatiga xabar
-    if "mudarris" in Config.BOT_NAME.lower() or "shaxsiy" in Config.BOT_NAME.lower():
-        from bot.supervisor import health_monitor
-        asyncio.create_task(health_monitor(bot, Config.OWNER_ID, check_interval=300))
+    # Health monitor o'chirilgan — owner so'ramagan
 
     await dp.start_polling(bot)
