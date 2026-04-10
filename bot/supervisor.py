@@ -146,7 +146,10 @@ async def health_monitor(bot, owner_id: int, choyxona_id: int = -1003436904722,
                     and "high demand" not in line.lower()
                     and "timeout" not in line.lower()
                     and "rate limit" not in line.lower()
+                    and "rate_limit" not in line.lower()
+                    and "quota" not in line.lower()
                     and "fallback" not in line.lower()
+                    and "429" not in line
                     and ("ERROR" in line or "crash" in line.lower())
                 ]
                 if real_errors:

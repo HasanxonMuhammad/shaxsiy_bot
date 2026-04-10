@@ -293,4 +293,24 @@ class GeminiEngine:
                     self.stats.errors += 1
                     return ""
 
+        # SDK fallback — 2.5-flash bilan urinish
+        if self._model_name != FALLBACK_MODEL:
+            log.warning("SDK fallback: %s → %s", self._model_name, FALLBACK_MODEL)
+            try:
+                genai.configure(api_key=self._keys[self._current_key])
+                model = genai.GenerativeModel(
+                    model_name=FALLBACK_MODEL,
+                    system_instruction=system_prompt,
+                    generation_config=genai.GenerationConfig(temperature=0.9, max_output_tokens=4096),
+                )
+                response = await model.generate_content_async(contents=contents)
+                if response and response.candidates:
+                    result = [p.text for p in response.candidates[0].content.parts if hasattr(p, "text") and p.text]
+                    text = "\n".join(result)
+                    self.stats.record(0, True, len(text))
+                    log.info("SDK fallback javob: %d belgi", len(text))
+                    return text
+            except Exception as e:
+                log.error("SDK fallback ham ishlamadi: %s", e)
+
         return ""
