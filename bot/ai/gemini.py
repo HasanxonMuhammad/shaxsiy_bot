@@ -61,7 +61,7 @@ class EngineStats:
         self.last_request_time = time.time()
 
 
-FALLBACK_MODEL = "gemini-2.5-flash"
+FALLBACK_MODEL = "gemini-2.5-pro"
 
 
 class GeminiEngine:
