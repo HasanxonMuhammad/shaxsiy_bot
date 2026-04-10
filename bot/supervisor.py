@@ -151,6 +151,7 @@ async def health_monitor(bot, owner_id: int, check_interval: int = 300):
                     and "429" not in line
                     and "gemini" not in line.lower()
                     and "barcha urinish" not in line.lower()
+                    and "namoz" not in line.lower()
                     and ("ERROR" in line or "crash" in line.lower())
                 ]
                 if real_errors:
