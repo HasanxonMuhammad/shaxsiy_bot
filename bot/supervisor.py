@@ -111,8 +111,7 @@ class Supervisor:
             return f"O'qish xatosi: {e}"
 
 
-async def health_monitor(bot, owner_id: int, choyxona_id: int = -1003436904722,
-                         check_interval: int = 300):
+async def health_monitor(bot, owner_id: int, check_interval: int = 300):
     """Mirzo-style monitoring — muammoni aniqlash, tuzatish, xabar berish."""
     log.info("Health monitor ishga tushdi (har %ds)", check_interval)
     sv = Supervisor()
@@ -150,6 +149,8 @@ async def health_monitor(bot, owner_id: int, choyxona_id: int = -1003436904722,
                     and "quota" not in line.lower()
                     and "fallback" not in line.lower()
                     and "429" not in line
+                    and "gemini" not in line.lower()
+                    and "barcha urinish" not in line.lower()
                     and ("ERROR" in line or "crash" in line.lower())
                 ]
                 if real_errors:
@@ -204,12 +205,9 @@ async def health_monitor(bot, owner_id: int, choyxona_id: int = -1003436904722,
                     msg_parts.append("⚠️ <b>Muammolar:</b>\n" + "\n".join(f"• {i}" for i in issues))
                 msg = "\n\n".join(msg_parts)
                 try:
-                    await bot.send_message(choyxona_id, msg, parse_mode="HTML")
+                    await bot.send_message(owner_id, msg, parse_mode="HTML")
                 except Exception:
-                    try:
-                        await bot.send_message(owner_id, msg, parse_mode="HTML")
-                    except Exception:
-                        pass
+                    pass
 
             # Eski reported issues tozalash (1 soatdan keyin qayta xabar qilishi mumkin)
             if len(reported_issues) > 50:
