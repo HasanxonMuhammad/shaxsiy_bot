@@ -1047,4 +1047,82 @@ async def start_bot():
 
     # Health monitor o'chirilgan — owner so'ramagan
 
+    # Olima — ertalab Azizaxonga kunlik salom
+    if "olima" in Config.BOT_NAME.lower():
+        asyncio.create_task(_olima_morning_loop(bot, ai))
+
     await dp.start_polling(bot)
+
+
+async def _olima_morning_loop(bot, ai):
+    """Olima har kuni soat 6:00 da Azizaxonga iliq xabar yuboradi."""
+    import random
+    from datetime import datetime, timedelta, timezone
+
+    AZIZAXON_ID = 5792080114
+    TZ_UZ = timezone(timedelta(hours=5))
+
+    # Sog'liq holati — 2-3 kun bemor (oy ko'rgan)
+    health_days_left = 3  # birinchi 3 kunda sog'liq so'rash
+
+    log.info("Olima morning scheduler ishga tushdi")
+
+    while True:
+        try:
+            now = datetime.now(TZ_UZ)
+            # Ertangi soat 6:00 ni hisoblash
+            target = now.replace(hour=6, minute=0, second=0, microsecond=0)
+            if now >= target:
+                target += timedelta(days=1)
+            wait_sec = (target - now).total_seconds()
+            log.info("Olima sabah xabari: %.0f soniyadan keyin (%s)", wait_sec, target.strftime("%d.%m %H:%M"))
+            await asyncio.sleep(wait_sec)
+
+            # Sabah xabar matni
+            if health_days_left > 0:
+                prompt = (
+                    "Sen Olima. Azizaxon hozir biroz kasal — oy ko'rgan, dam olayapti. "
+                    "Unga iliq, mehribon ertalabki xabar yoz. Uning holini so'ra, dam olishni maslahat ber, "
+                    "issiq choy, asal kabi uy chorasini eslatib qo'y. "
+                    "Ba'zan forscha yoki o'zbekcha bitta bayt qo'sh — o'ringa qarab. "
+                    "Azizaxonga 'siz' deb murojaat qil. Qisqa, iliq, samimiy. 3-5 jumla."
+                )
+                health_days_left -= 1
+            else:
+                greetings = [
+                    "bugungi reja, bugungi niyat, kayfiyat haqida so'ra",
+                    "tush ko'rdimi, yaxshi uxladimi so'ra",
+                    "bugun nima pishirmoqchi, qanday kun o'tkazmoqchi so'ra",
+                    "ertalabki tilak yubor, kuni xayrli bo'lsin de",
+                    "forscha bitta bayt bilan ertalabki salom",
+                    "bugun nimalar rejada, qanday his bilan uyg'ondi so'ra",
+                    "ertalabki iliq fikr — tabiat, hayot, mehr haqida bitta jumla",
+                ]
+                theme = random.choice(greetings)
+                prompt = (
+                    f"Sen Olima. Azizaxonga ertalabki iliq xabar yoz. Mavzu: {theme}. "
+                    "Har kuni farq qilsin — bugun boshqacha yoz. "
+                    "Ba'zan forscha/o'zbekcha bayt qo'sh (har doim emas). "
+                    "Azizaxonga 'siz' deb murojaat qil. Qisqa, samimiy, issiq. 2-4 jumla."
+                )
+
+            response = await ai.chat(
+                build_system_prompt(),
+                [{"role": "user", "text": prompt}],
+            )
+
+            if response and len(response.strip()) > 10:
+                import re
+                clean = re.sub(r"\[TOOL:\w+\]\{[^}]*\}", "", response).strip()
+                clean = re.sub(r"\[REACT:[^\]]+\]", "", clean).strip()
+                clean = re.sub(r"\[NO_ACTION\]", "", clean).strip()
+                if clean:
+                    try:
+                        await bot.send_message(AZIZAXON_ID, clean, parse_mode="HTML")
+                        log.info("Olima sabah xabari yuborildi")
+                    except Exception:
+                        await bot.send_message(AZIZAXON_ID, clean)
+
+        except Exception as e:
+            log.error("Olima morning loop xatosi: %s", e)
+            await asyncio.sleep(3600)
