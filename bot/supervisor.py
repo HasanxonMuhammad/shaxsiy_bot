@@ -67,11 +67,11 @@ class Supervisor:
     def check_errors(self, minutes: int = 30) -> str:
         """Oxirgi N daqiqadagi xatolarni tekshirish."""
         since = (datetime.utcnow() - timedelta(minutes=minutes)).strftime("%Y-%m-%d %H:%M:%S")
-        cmd = f"sudo journalctl -u shaxsiy-bot --since '{since}' --no-pager | grep -i 'error\\|xato\\|crash\\|fail'"
+        cmd = f"sudo journalctl -u shaxsiy-bot --since '{since}' --no-pager | grep -i 'error\\|crash\\|fail' || true"
         result = self.run_cmd(cmd, timeout=15)
-        if not result or result == "(bo'sh natija)":
-            return f"Oxirgi {minutes} daqiqada xato topilmadi"
-        return f"Oxirgi {minutes} daqiqadagi xatolar:\n{result}"
+        if not result or result == "(bo'sh natija)" or len(result.strip()) < 5:
+            return "xato topilmadi"
+        return result
 
     def edit_file(self, filepath: str, old: str, new: str) -> str:
         """Faylni tahrirlash (prompt, config)."""
@@ -138,20 +138,22 @@ async def health_monitor(bot, owner_id: int, choyxona_id: int = -1003436904722,
 
             # 2. Xatolar tekshirish (high demand ni o'tkazib yuborish)
             error_log = sv.check_errors(minutes=check_interval // 60 + 1)
-            if "xato topilmadi" not in error_log and "(bo'sh natija)" not in error_log:
+            if error_log != "xato topilmadi":
                 # Faqat haqiqiy xatolarni filtrlash
-                non_demand_errors = [
-                    line for line in error_log.split("\n")
-                    if "high demand" not in line.lower()
+                real_errors = [
+                    line.strip() for line in error_log.split("\n")
+                    if line.strip()
+                    and "high demand" not in line.lower()
                     and "timeout" not in line.lower()
-                    and "Oxirgi" not in line  # header ni o'tkazish
-                    and "error" in line.lower() or "xato" in line.lower() or "crash" in line.lower()
+                    and "rate limit" not in line.lower()
+                    and "fallback" not in line.lower()
+                    and ("ERROR" in line or "crash" in line.lower())
                 ]
-                if non_demand_errors:
-                    error_summary = "\n".join(non_demand_errors[:5])
-                    issue_key = error_summary[:100]
+                if real_errors:
+                    error_summary = "\n".join(real_errors[:3])
+                    issue_key = error_summary[:80]
                     if issue_key not in reported_issues:
-                        issues.append(f"Xatolar aniqlandi:\n{error_summary}")
+                        issues.append(f"Xatolar:\n{error_summary}")
                         reported_issues.add(issue_key)
 
             # 3. Disk to'lib ketganmi?
