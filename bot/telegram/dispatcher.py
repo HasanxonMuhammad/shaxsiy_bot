@@ -192,7 +192,7 @@ async def process_messages(chat_id: int, messages: list[dict]):
     """Debouncer flush — to'plangan xabarlarni AI ga yuboradi."""
     bot: Bot = dp["bot"]
 
-    history = await db.get_recent_messages(chat_id, 30)
+    history = await db.get_recent_messages(chat_id, 15)
 
     # XML format (prompt injection himoyali)
     ctx = "<chat_history>\n"
@@ -253,15 +253,15 @@ async def process_messages(chat_id: int, messages: list[dict]):
 
     # Session persistence — oldingi suhbat tarixini olish
     # Kontekst to'lib ketmasligi uchun max 20 turn
-    session_history = await db.get_session_history(chat_id, limit=20)
+    session_history = await db.get_session_history(chat_id, limit=8)
     # Agar session juda uzaygan bo'lsa — eskisini tozalash
-    full_history = await db.get_session_history(chat_id, limit=100)
-    if len(full_history) > 40:
+    full_history = await db.get_session_history(chat_id, limit=50)
+    if len(full_history) > 20:
         await db.clear_session(chat_id)
         # Faqat oxirgi 10 ta turnni saqlash
         for turn in full_history[-10:]:
             await db.save_session_turn(chat_id, turn["role"], turn["text"])
-        session_history = await db.get_session_history(chat_id, limit=20)
+        session_history = await db.get_session_history(chat_id, limit=8)
         log.info("Session auto-reset: %d -> 10 turn (chat %d)", len(full_history), chat_id)
     conversation = []
     for turn in session_history:
