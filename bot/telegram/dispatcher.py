@@ -613,12 +613,12 @@ async def on_message(message: types.Message):
             await message.reply(info, parse_mode="HTML")
             return
 
-    # Botlar choyxonasi — ichki guruh, hamma xabarga javob beradi
-    BOTLAR_CHOYXONASI = -1003436904722
+    # Botlar choyxonasi + free chat guruhlar — hamma xabarga javob beradi
+    FREE_CHAT_GROUPS = {-1003436904722, -1003648834056}  # choyxona + nodira guruhi
     is_bot = user.is_bot if user else False
     bot_me = await tg_bot.me()
 
-    if is_bot and chat_id != BOTLAR_CHOYXONASI:
+    if is_bot and chat_id not in FREE_CHAT_GROUPS:
         # Tashqi guruhlarda bot-to-bot loop himoyasi
         bot_username = bot_me.username or ""
         mentioned = f"@{bot_username}".lower() in text.lower() if bot_username else False
@@ -631,11 +631,11 @@ async def on_message(message: types.Message):
             await db.save_message(chat_id, message.message_id, user_id, username, first_name, text, None, ts)
             return
 
-    if is_bot and chat_id == BOTLAR_CHOYXONASI:
-        # Botlar choyxonasida loop limiti: oxirgi 6 xabarda 4+ bot xabar → to'xta
-        recent = await db.get_recent_messages(chat_id, 6)
+    if is_bot and chat_id in FREE_CHAT_GROUPS:
+        # Loop limiti: oxirgi 10 xabarda 6+ bot xabar → to'xta
+        recent = await db.get_recent_messages(chat_id, 10)
         bot_msgs = sum(1 for m in recent if m.get("user_id", 0) != Config.OWNER_ID and m.get("username", "").endswith("bot"))
-        if bot_msgs >= 4:
+        if bot_msgs >= 6:
             log.info("Choyxona loop limiti: %d bot xabar, to'xtatildi", bot_msgs)
             ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
             await db.save_message(chat_id, message.message_id, user_id, username, first_name, text, None, ts)
