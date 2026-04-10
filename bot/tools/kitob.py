@@ -14,14 +14,31 @@ CHUNK_OVERLAP = 100
 
 
 class KitobRAG:
+    # Lotin → krill transliteratsiya (o'zbekcha)
+    _LATIN_TO_CYRILLIC = {
+        "sh": "ш", "ch": "ч", "ng": "нг", "o'": "ў", "g'": "ғ",
+        "ya": "я", "yu": "ю", "ye": "е", "yo": "ё", "ts": "ц",
+        "a": "а", "b": "б", "d": "д", "e": "е", "f": "ф",
+        "g": "г", "h": "ҳ", "i": "и", "j": "ж", "k": "к",
+        "l": "л", "m": "м", "n": "н", "o": "о", "p": "п",
+        "q": "қ", "r": "р", "s": "с", "t": "т", "u": "у",
+        "v": "в", "x": "х", "y": "й", "z": "з", "w": "в",
+    }
+
     def __init__(self, db_path: Path):
         self.db_path = db_path
         self._ok = db_path.exists()
         if not self._ok:
             log.warning("Kitob DB topilmadi: %s", db_path)
 
+    def _to_cyrillic(self, text: str) -> str:
+        result = text.lower()
+        for lat, cyr in sorted(self._LATIN_TO_CYRILLIC.items(), key=lambda x: -len(x[0])):
+            result = result.replace(lat, cyr)
+        return result
+
     def search(self, query: str, limit: int = 5) -> str:
-        """FTS5 bilan qidirish. Natija: formatlangan matn."""
+        """FTS5 bilan qidirish — lotin va krill. Natija: formatlangan matn."""
         if not self._ok:
             return "Kitob bazasi mavjud emas"
         if not query.strip():
@@ -32,35 +49,47 @@ class KitobRAG:
             conn.row_factory = sqlite3.Row
             cur = conn.cursor()
 
-            # FTS5 MATCH qidirish
-            cur.execute(
-                """
-                SELECT k.title, k.lang, c.chunk_text,
-                       bm25(kitob_fts) AS score
-                FROM kitob_fts
-                JOIN kitob_chunks c ON kitob_fts.rowid = c.id
-                JOIN kitoblar k ON c.kitob_id = k.id
-                WHERE kitob_fts MATCH ?
-                ORDER BY score
-                LIMIT ?
-                """,
-                (query, limit),
-            )
-            rows = cur.fetchall()
+            # Lotin + krill variant
+            queries_to_try = [query]
+            cyrillic_q = self._to_cyrillic(query)
+            if cyrillic_q != query.lower():
+                queries_to_try.append(cyrillic_q)
+
+            rows = []
+            seen_keys = set()
+            for q in queries_to_try:
+                try:
+                    cur.execute(
+                        """
+                        SELECT k.title, k.lang, c.chunk_text,
+                               bm25(kitob_fts) AS score
+                        FROM kitob_fts
+                        JOIN kitob_chunks c ON kitob_fts.rowid = c.id
+                        JOIN kitoblar k ON c.kitob_id = k.id
+                        WHERE kitob_fts MATCH ?
+                        ORDER BY score
+                        LIMIT ?
+                        """,
+                        (q, limit),
+                    )
+                    for r in cur.fetchall():
+                        key = r["chunk_text"][:80]
+                        if key not in seen_keys:
+                            seen_keys.add(key)
+                            rows.append(r)
+                    if rows:
+                        break
+                except Exception:
+                    continue
+
             conn.close()
 
             if not rows:
                 return "Ushbu mavzu bo'yicha kitoblarda hech narsa topilmadi"
 
             parts = []
-            seen = set()
-            for r in rows:
+            for r in rows[:limit]:
                 chunk = r["chunk_text"].strip()
-                # Takroriy parchalami o'tkazib yubor
-                key = chunk[:80]
-                if key in seen:
-                    continue
-                seen.add(key)
                 parts.append(f"📖 <b>{r['title']}</b>\n{chunk}")
 
             return "\n\n---\n\n".join(parts)
