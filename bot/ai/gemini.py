@@ -177,11 +177,19 @@ class GeminiEngine:
                 duration_ms = (time.time() - start) * 1000
 
                 if "candidates" in data:
-                    parts = [p["text"] for p in data["candidates"][0]["content"]["parts"] if "text" in p]
+                    candidate = data["candidates"][0]
+                    content = candidate.get("content", {})
+                    parts = [p["text"] for p in content.get("parts", []) if "text" in p]
                     text = "\n".join(parts)
-                    self.stats.record(duration_ms, True, len(text))
-                    log.info("Gemini javob: %d belgi, %.0fms", len(text), duration_ms)
-                    return text
+                    if text:
+                        self.stats.record(duration_ms, True, len(text))
+                        log.info("Gemini javob: %d belgi, %.0fms", len(text), duration_ms)
+                        return text
+                    # Bo'sh javob — fallback qilish uchun davom et
+                    finish_reason = candidate.get("finishReason", "UNKNOWN")
+                    log.warning("Gemini bo'sh javob (finishReason=%s) — fallback", finish_reason)
+                    self.stats.record(duration_ms, False)
+                    break
 
                 error_msg = data.get("error", {}).get("message", "")
                 error_type = _classify_error(error_msg)
