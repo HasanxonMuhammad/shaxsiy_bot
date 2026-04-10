@@ -1032,6 +1032,11 @@ async def start_bot():
         asyncio.create_task(namoz_scheduler(bot, namoz_chats))
         log.info("Namoz scheduler ishga tushdi: %s", namoz_chats)
 
+    # Inner voice — bot o'zi xohlagan paytda yozadi (choyxonada)
+    from bot.inner_voice import inner_voice_loop
+    BOTLAR_CHOYXONASI_ID = -1003436904722
+    asyncio.create_task(inner_voice_loop(bot, ai, BOTLAR_CHOYXONASI_ID, Config.BOT_NAME))
+
     # Health monitor — faqat MudarrisAI uchun, owner shaxsiy chatiga xabar
     if "mudarris" in Config.BOT_NAME.lower() or "shaxsiy" in Config.BOT_NAME.lower():
         from bot.supervisor import health_monitor
