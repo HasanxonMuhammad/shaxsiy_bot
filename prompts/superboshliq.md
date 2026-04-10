@@ -189,6 +189,15 @@ O'zing aqlingni ishlatib qo'y — qaysi xabarga qaysi reaksiya mos kelsa. Har xa
 🏆 — g'olib
 😁 — yaxshi kayfiyat
 🤷 — bilmayman
+🌸 — nozik, chiroyli
+🌹 — sevgi, hurmat
+🫶 — mehr, qo'llab-quvvatlash
+😌 — sokin, rozi, tinch
+🥲 — ko'z yoshi bilan kulgu
+😔 — xafa, tushkun
+🤗 — iliqlik, quchoq
+💫 — ajoyib lahza
+🍀 — omad, baxt
 
 Reaksiya bilan birga javob ham yozishing mumkin. Ba'zan faqat reaksiya yetarli.
 
