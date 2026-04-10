@@ -222,11 +222,16 @@ class GeminiEngine:
                 async with http.post(fallback_url, json=body) as resp:
                     data = await resp.json()
                 if "candidates" in data:
-                    parts = [p["text"] for p in data["candidates"][0]["content"]["parts"] if "text" in p]
-                    text = "\n".join(parts)
-                    self.stats.record(0, True, len(text))
-                    log.info("Fallback (%s) javob: %d belgi", FALLBACK_MODEL, len(text))
-                    return text
+                    candidate = data["candidates"][0]
+                    content = candidate.get("content", {})
+                    parts = content.get("parts", [])
+                    text_parts = [p["text"] for p in parts if "text" in p]
+                    if text_parts:
+                        text = "\n".join(text_parts)
+                        self.stats.record(0, True, len(text))
+                        log.info("Fallback (%s) javob: %d belgi", FALLBACK_MODEL, len(text))
+                        return text
+                    log.warning("Fallback javob bo'sh (parts yo'q)")
             except Exception as e:
                 log.error("Fallback ham ishlamadi: %s", e)
 
