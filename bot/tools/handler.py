@@ -11,6 +11,7 @@ from bot.tools.lugat import Lugat
 from bot.tools.kitob import KitobRAG
 from bot.tools.hadis_rag import HadisRAG
 from bot.tools.islamic_api import IslamicAPI
+from bot.tools.telegraph import upload_image, create_page
 from bot.supervisor import Supervisor
 
 log = logging.getLogger(__name__)
@@ -155,6 +156,8 @@ class ToolHandler:
                 return await self._get_chat_admins(params)
             case "kanalga_post":
                 return await self._kanalga_post(params)
+            case "telegraf_post":
+                return await self._telegraf_post(params)
             case "read_prompt":
                 return self._read_prompt()
             case "edit_prompt":
@@ -455,12 +458,6 @@ class ToolHandler:
             return "API kalit yo'q"
 
         # Til kodini to'liq nomga aylantirish
-        lang_map = {
-            "uz": "Uzbek", "ar": "Arabic", "en": "English",
-            "tr": "Turkish", "fa": "Persian", "ja": "Japanese",
-            "ko": "Korean", "zh": "Chinese", "ru": "Russian",
-        }
-        lang_name = lang_map.get(lang, lang)
 
         try:
             # Gemini TTS — maxsus TTS modeli
@@ -700,6 +697,49 @@ class ToolHandler:
             return "Kanalga post yuborildi"
         except Exception as e:
             return f"Kanalga post xatosi: {e}"
+
+    async def _telegraf_post(self, p: dict) -> str:
+        """Telegraph da longread maqola yaratish va kanalga havola yuborish."""
+        if not hasattr(self, '_bot') or not self._bot:
+            return "Bot ulanmagan"
+
+        title = p.get("title", "")
+        content = p.get("content", "")
+        channel_id = p.get("chat_id", 0)
+        caption = p.get("caption", "")  # Kanalga qo'shimcha izoh
+
+        if not title or not content:
+            return "title va content kerak"
+
+        try:
+            # Rasm bor bo'lsa — avval yuklash
+            image_src = None
+            image_b64 = p.get("image_base64", "")
+            image_mime = p.get("image_mime", "image/jpeg")
+            if image_b64:
+                import base64 as _b64
+                img_bytes = _b64.b64decode(image_b64)
+                image_src = await upload_image(img_bytes, image_mime)
+                log.info("Rasm Telegraph ga yuklandi: %s", image_src)
+
+            # Maqola yaratish
+            url = await create_page(title, content, image_src=image_src)
+
+            # Kanalga havola yuborish
+            if channel_id:
+                from aiogram.enums import ParseMode
+                if caption:
+                    msg = f'<b>{title}</b>\n\n{caption}\n\n<a href="{url}">To\'liq o\'qi (Instant View) →</a>'
+                else:
+                    msg = f'<b>{title}</b>\n\n<a href="{url}">To\'liq o\'qi (Instant View) →</a>'
+                await self._bot.send_message(channel_id, msg, parse_mode=ParseMode.HTML)
+                return f"Telegraph maqola yaratildi va kanalga yuborildi: {url}"
+
+            return f"Telegraph maqola yaratildi: {url}"
+
+        except Exception as e:
+            log.error("telegraf_post xatosi: %s", e)
+            return f"Xato: {e}"
 
     # ── Prompt o'z-o'zini boshqarish ────────────────────────────
 

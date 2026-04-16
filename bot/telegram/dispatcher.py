@@ -615,31 +615,47 @@ async def on_message(message: types.Message):
 
     # Botlar choyxonasi + free chat guruhlar — hamma xabarga javob beradi
     FREE_CHAT_GROUPS = {-1003436904722, -1003648834056, -1002401618185}  # choyxona + nodira + xonai saodat
+    # Bot lab guruhlar — faqat botlar yozadi, loop limit yo'q
+    BOT_LAB_GROUPS = {-1003648834056}  # bot_xona: faqat botlar, loop himoya kerak emas
     is_bot = user.is_bot if user else False
     bot_me = await tg_bot.me()
 
-    if is_bot and chat_id not in FREE_CHAT_GROUPS:
-        # Tashqi guruhlarda bot-to-bot loop himoyasi
+    if is_bot:
         bot_username = bot_me.username or ""
         mentioned = f"@{bot_username}".lower() in text.lower() if bot_username else False
         replied_to_me = False
         if message.reply_to_message and message.reply_to_message.from_user:
             replied_to_me = message.reply_to_message.from_user.id == bot_me.id
-        if not mentioned and not replied_to_me:
-            log.info("Bot xabar (loop himoya): %s dan, o'tkazildi", first_name)
-            ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-            await db.save_message(chat_id, message.message_id, user_id, username, first_name, text, None, ts)
-            return
 
-    if is_bot and chat_id in FREE_CHAT_GROUPS:
-        # Loop limiti: oxirgi 10 xabarda 6+ bot xabar → to'xta
-        recent = await db.get_recent_messages(chat_id, 10)
-        bot_msgs = sum(1 for m in recent if m.get("user_id", 0) != Config.OWNER_ID and m.get("username", "").endswith("bot"))
-        if bot_msgs >= 6:
-            log.info("Choyxona loop limiti: %d bot xabar, to'xtatildi", bot_msgs)
-            ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-            await db.save_message(chat_id, message.message_id, user_id, username, first_name, text, None, ts)
-            return
+        if chat_id in BOT_LAB_GROUPS:
+            # Bot xona: 2 bot o'zaro suhbat qilayotgan bo'lsa — aralashma
+            # Oxirgi 4 xabar aynan 2 xil botdan galma-gal kelayotgan bo'lsa → chiqib ket
+            recent = await db.get_recent_messages(chat_id, 4)
+            if len(recent) >= 3:
+                recent_senders = [m.get("username", "") for m in recent if m.get("username", "").endswith("bot")]
+                unique_bots = set(recent_senders)
+                if len(unique_bots) == 2 and len(recent_senders) >= 3 and not mentioned and not replied_to_me:
+                    log.info("Bot lab: 2 bot suhbati (%s), aralashilmadi", unique_bots)
+                    ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+                    await db.save_message(chat_id, message.message_id, user_id, username, first_name, text, None, ts)
+                    return
+            # Aks holda: AIga uzatiladi, AI prompt orqali qo'shilish/qo'shilmaslikni hal qiladi
+        elif chat_id not in FREE_CHAT_GROUPS:
+            # Tashqi guruhlarda bot-to-bot loop himoyasi
+            if not mentioned and not replied_to_me:
+                log.info("Bot xabar (loop himoya): %s dan, o'tkazildi", first_name)
+                ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+                await db.save_message(chat_id, message.message_id, user_id, username, first_name, text, None, ts)
+                return
+        else:
+            # Choyxona/xonai saodat: loop limiti
+            recent = await db.get_recent_messages(chat_id, 10)
+            bot_msgs = sum(1 for m in recent if m.get("user_id", 0) != Config.OWNER_ID and m.get("username", "").endswith("bot"))
+            if bot_msgs >= 6:
+                log.info("Choyxona loop limiti: %d bot xabar, to'xtatildi", bot_msgs)
+                ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+                await db.save_message(chat_id, message.message_id, user_id, username, first_name, text, None, ts)
+                return
 
     # Guruh tekshiruvi
     if chat_id < 0:
@@ -1006,7 +1022,7 @@ async def start_bot():
     db = Database(Config.db_path())
     await db.connect()
 
-    ai = GeminiEngine(Config.GEMINI_API_KEYS, Config.GEMINI_MODEL)
+    ai = GeminiEngine(Config.GEMINI_API_KEYS, Config.GEMINI_MODEL, Config.FALLBACK_MODEL)
     memory = MemoryStore(Config.memories_dir())
     tools = ToolHandler(db, memory)
     buffer.on_flush = process_messages

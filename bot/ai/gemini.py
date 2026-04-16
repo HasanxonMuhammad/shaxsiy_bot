@@ -61,13 +61,12 @@ class EngineStats:
         self.last_request_time = time.time()
 
 
-FALLBACK_MODEL = "gemini-2.5-pro"
-
 
 class GeminiEngine:
-    def __init__(self, api_keys: list[str], model: str = "gemini-2.5-flash"):
+    def __init__(self, api_keys: list[str], model: str = "gemini-2.5-flash", fallback_model: str | None = None):
         self._keys = api_keys
         self._model_name = model
+        self._fallback_model = fallback_model
         self._current_key = 0
         self._http: aiohttp.ClientSession | None = None
         self.stats = EngineStats()
@@ -185,11 +184,13 @@ class GeminiEngine:
                         self.stats.record(duration_ms, True, len(text))
                         log.info("Gemini javob: %d belgi, %.0fms", len(text), duration_ms)
                         return text
-                    # Bo'sh javob — fallback qilish uchun davom et
+                    # Bo'sh javob — google_search olib retry
                     finish_reason = candidate.get("finishReason", "UNKNOWN")
-                    log.warning("Gemini bo'sh javob (finishReason=%s) — fallback", finish_reason)
+                    log.warning("Gemini bo'sh javob (finishReason=%s, urinish %d) — search o'chirib qayta", finish_reason, attempt + 1)
                     self.stats.record(duration_ms, False)
-                    break
+                    body.pop("tools", None)  # google_search chalkashtiryapti
+                    await asyncio.sleep(1)
+                    continue
 
                 error_msg = data.get("error", {}).get("message", "")
                 error_type = _classify_error(error_msg)
@@ -222,26 +223,16 @@ class GeminiEngine:
                 self.stats.errors += 1
                 return ""
 
-        # Fallback — asosiy model ishlamasa, gemini-2.5-flash bilan urinish
-        if self._model_name != FALLBACK_MODEL:
-            log.warning("Asosiy model (%s) ishlamadi — %s ga fallback", self._model_name, FALLBACK_MODEL)
-            fallback_url = API_URL.format(model=FALLBACK_MODEL, key=self._keys[self._current_key])
-            try:
-                async with http.post(fallback_url, json=body) as resp:
-                    data = await resp.json()
-                if "candidates" in data:
-                    candidate = data["candidates"][0]
-                    content = candidate.get("content", {})
-                    parts = content.get("parts", [])
-                    text_parts = [p["text"] for p in parts if "text" in p]
-                    if text_parts:
-                        text = "\n".join(text_parts)
-                        self.stats.record(0, True, len(text))
-                        log.info("Fallback (%s) javob: %d belgi", FALLBACK_MODEL, len(text))
-                        return text
-                    log.warning("Fallback javob bo'sh (parts yo'q)")
-            except Exception as e:
-                log.error("Fallback ham ishlamadi: %s", e)
+        # Barcha kalit/urinishlar tugadi — fallback modelga o'tish
+        if self._fallback_model and self._model_name != self._fallback_model:
+            log.warning("Barcha urinishlar tugadi — fallback: %s → %s",
+                        self._model_name, self._fallback_model)
+            original_model = self._model_name
+            self._model_name = self._fallback_model
+            self._current_key = 0
+            result = await self._chat_rest(system_prompt, messages, use_search=use_search)
+            self._model_name = original_model  # keyingi so'rov uchun qaytarish
+            return result
 
         log.error("Barcha urinishlar muvaffaqiyatsiz (%d)", total_keys * MAX_RETRIES)
         return ""
@@ -300,25 +291,5 @@ class GeminiEngine:
                 else:
                     self.stats.errors += 1
                     return ""
-
-        # SDK fallback — 2.5-flash bilan urinish
-        if self._model_name != FALLBACK_MODEL:
-            log.warning("SDK fallback: %s → %s", self._model_name, FALLBACK_MODEL)
-            try:
-                genai.configure(api_key=self._keys[self._current_key])
-                model = genai.GenerativeModel(
-                    model_name=FALLBACK_MODEL,
-                    system_instruction=system_prompt,
-                    generation_config=genai.GenerationConfig(temperature=0.9, max_output_tokens=4096),
-                )
-                response = await model.generate_content_async(contents=contents)
-                if response and response.candidates:
-                    result = [p.text for p in response.candidates[0].content.parts if hasattr(p, "text") and p.text]
-                    text = "\n".join(result)
-                    self.stats.record(0, True, len(text))
-                    log.info("SDK fallback javob: %d belgi", len(text))
-                    return text
-            except Exception as e:
-                log.error("SDK fallback ham ishlamadi: %s", e)
 
         return ""

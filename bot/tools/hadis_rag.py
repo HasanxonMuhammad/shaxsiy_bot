@@ -63,8 +63,9 @@ class HadisRAG:
                 try:
                     cur.execute(
                         """
-                        SELECT h.kitob_nomi, h.sarlavha, h.arabcha, h.uzbekcha,
-                               h.hadis_raqam, bm25(hadis_fts) AS score
+                        SELECT h.kitob_nomi, h.kitob_id, h.bob_id, h.sarlavha,
+                               h.arabcha, h.uzbekcha, h.hadis_raqam,
+                               bm25(hadis_fts) AS score
                         FROM hadis_fts
                         JOIN hadislar h ON hadis_fts.rowid = h.id
                         WHERE hadis_fts MATCH ?
@@ -77,37 +78,76 @@ class HadisRAG:
                 except Exception:
                     pass
 
-            # FTS5 topilmasa — LIKE fallback (faqat uzbekcha, tez)
+            # FTS5 topilmasa — mavzular ustunidan qidirish
+            if not rows:
+                cyrillic_q = self._to_cyrillic(query)
+                for like_q in [query.lower(), cyrillic_q]:
+                    if rows:
+                        break
+                    words = [w for w in like_q.split() if len(w) >= 3]
+                    for word in words:
+                        if rows:
+                            break
+                        cur.execute(
+                            """SELECT kitob_nomi, kitob_id, bob_id, sarlavha,
+                                      arabcha, uzbekcha, hadis_raqam
+                               FROM hadislar WHERE mavzular LIKE ? LIMIT ?""",
+                            (f"%{word}%", limit),
+                        )
+                        rows = cur.fetchall()
+
+            # Mavzu ham topilmasa — LIKE fallback (faqat uzbekcha, tez)
             if not rows:
                 cyrillic_q = self._to_cyrillic(query)
                 for like_q in [cyrillic_q, query]:
                     if rows:
                         break
                     cur.execute(
-                        """SELECT kitob_nomi, sarlavha, arabcha, uzbekcha, hadis_raqam
+                        """SELECT kitob_nomi, kitob_id, bob_id, sarlavha,
+                                  arabcha, uzbekcha, hadis_raqam
                            FROM hadislar WHERE uzbekcha LIKE ? LIMIT ?""",
                         (f"%{like_q}%", limit),
                     )
                     rows = cur.fetchall()
 
-            conn.close()
-
             if not rows:
+                conn.close()
                 return ""
 
-            return self._format_rows(rows)
+            result = self._format_rows(rows, conn)
+            conn.close()
+            return result
 
         except Exception as e:
             log.error("HadisRAG qidirish xatosi: %s", e)
             return f"Qidiruvda xato: {e}"
 
-    def _format_rows(self, rows) -> str:
+    def _format_rows(self, rows, conn=None) -> str:
         parts = []
         for r in rows:
             lines = []
             lines.append(f"KITOB: {r['kitob_nomi']}")
             if r["hadis_raqam"]:
                 lines.append(f"RAQAM: {r['hadis_raqam']}")
+            # Bob nomini hadis_boblar dan olish
+            if conn:
+                try:
+                    kitob_id = r["kitob_id"] if "kitob_id" in r.keys() else None
+                    bob_id = r["bob_id"] if "bob_id" in r.keys() else None
+                    if kitob_id and bob_id:
+                        bc = conn.cursor()
+                        bc.execute(
+                            "SELECT nomi_uz, nomi_ar FROM hadis_boblar "
+                            "WHERE kitob_id=? AND bob_id=?",
+                            (kitob_id, bob_id)
+                        )
+                        brow = bc.fetchone()
+                        if brow and brow["nomi_uz"]:
+                            lines.append(f"BOB: {brow['nomi_uz']}")
+                        if brow and brow["nomi_ar"]:
+                            lines.append(f"BOB (AR): {brow['nomi_ar']}")
+                except Exception:
+                    pass
             if r["sarlavha"]:
                 lines.append(f"SARLAVHA: {r['sarlavha']}")
             if r["arabcha"]:

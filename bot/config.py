@@ -24,6 +24,7 @@ class Config:
         if k.strip()
     ]
     GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    FALLBACK_MODEL: str | None = os.getenv("FALLBACK_MODEL") or None
     OWNER_ID: int = int(os.getenv("OWNER_ID", "0"))
     VIP_IDS: list[int] = [
         int(v.strip())
