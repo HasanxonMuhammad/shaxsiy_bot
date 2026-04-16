@@ -54,7 +54,7 @@ class AmthalRAG:
                     break
                 try:
                     cur.execute(
-                        """SELECT a.arabcha, a.tarjima, a.izoh, bm25(amthal_fts) AS score
+                        """SELECT a.arabcha, a.tarjima, a.tarjima_uz, a.izoh, bm25(amthal_fts) AS score
                            FROM amthal_fts
                            JOIN amthal a ON amthal_fts.rowid = a.id
                            WHERE amthal_fts MATCH ?
@@ -65,15 +65,15 @@ class AmthalRAG:
                 except Exception:
                     pass
 
-            # LIKE fallback
+            # LIKE fallback — tarjima_uz ham qidirish
             if not rows:
                 for like_q in [query, cyr]:
                     if rows:
                         break
                     cur.execute(
-                        """SELECT arabcha, tarjima, izoh FROM amthal
-                           WHERE arabcha LIKE ? OR tarjima LIKE ? LIMIT ?""",
-                        (f"%{like_q}%", f"%{like_q}%", limit)
+                        """SELECT arabcha, tarjima, tarjima_uz, izoh FROM amthal
+                           WHERE arabcha LIKE ? OR tarjima LIKE ? OR tarjima_uz LIKE ? LIMIT ?""",
+                        (f"%{like_q}%", f"%{like_q}%", f"%{like_q}%", limit)
                     )
                     rows = cur.fetchall()
 
@@ -84,8 +84,13 @@ class AmthalRAG:
             parts = []
             for r in rows:
                 lines = [f"MATHAL: {r['arabcha']}"]
-                if r["tarjima"]:
-                    lines.append(f"TARJIMA: {r['tarjima']}")
+                # O'zbek tarjima ustuvor
+                uz = r["tarjima_uz"] if "tarjima_uz" in r.keys() and r["tarjima_uz"] else None
+                en = r["tarjima"] if r["tarjima"] else None
+                if uz:
+                    lines.append(f"TARJIMA: {uz}")
+                elif en:
+                    lines.append(f"TARJIMA (EN): {en}")
                 if r["izoh"]:
                     lines.append(f"IZOH: {r['izoh']}")
                 parts.append("\n".join(lines))
@@ -103,14 +108,18 @@ class AmthalRAG:
             conn = sqlite3.connect(self.db_path)
             conn.row_factory = sqlite3.Row
             cur = conn.cursor()
-            cur.execute("SELECT arabcha, tarjima, izoh FROM amthal ORDER BY RANDOM() LIMIT 1")
+            cur.execute("SELECT arabcha, tarjima, tarjima_uz, izoh FROM amthal ORDER BY RANDOM() LIMIT 1")
             r = cur.fetchone()
             conn.close()
             if not r:
                 return ""
             lines = [f"MATHAL: {r['arabcha']}"]
-            if r["tarjima"]:
-                lines.append(f"TARJIMA: {r['tarjima']}")
+            uz = r["tarjima_uz"] if "tarjima_uz" in r.keys() and r["tarjima_uz"] else None
+            en = r["tarjima"] if r["tarjima"] else None
+            if uz:
+                lines.append(f"TARJIMA: {uz}")
+            elif en:
+                lines.append(f"TARJIMA (EN): {en}")
             if r["izoh"]:
                 lines.append(f"IZOH: {r['izoh']}")
             return "\n".join(lines)
