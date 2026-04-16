@@ -65,14 +65,14 @@ class AmthalRAG:
                 except Exception:
                     pass
 
-            # LIKE fallback — tarjima_uz ham qidirish
+            # LIKE fallback — tarjima_uz va tags_uz ham qidirish
             if not rows:
                 for like_q in [query, cyr]:
                     if rows:
                         break
                     cur.execute(
                         """SELECT arabcha, tarjima, tarjima_uz, izoh FROM amthal
-                           WHERE arabcha LIKE ? OR tarjima LIKE ? OR tarjima_uz LIKE ? LIMIT ?""",
+                           WHERE arabcha LIKE ? OR tarjima_uz LIKE ? OR tags_uz LIKE ? LIMIT ?""",
                         (f"%{like_q}%", f"%{like_q}%", f"%{like_q}%", limit)
                     )
                     rows = cur.fetchall()
