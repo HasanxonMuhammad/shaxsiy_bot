@@ -2,6 +2,7 @@ import base64
 import json
 import logging
 import re
+from pathlib import Path
 
 import aiohttp
 
@@ -53,7 +54,10 @@ class ToolHandler:
         self.lugat = Lugat(lugat_path) if lugat_path.exists() else None
         kitob_path = Config.DATA_DIR / "kitoblar.db"
         self.kitob = KitobRAG(kitob_path)
+        # hadislar.db umumiy — DATA_DIR da bo'lmasa loyiha ildizidan qidiramiz
         hadis_path = Config.DATA_DIR / "hadislar.db"
+        if not hadis_path.exists():
+            hadis_path = Path(__file__).parent.parent.parent / "data" / "hadislar.db"
         self.hadis_rag = HadisRAG(hadis_path)
         self.islamic = IslamicAPI()
         self.supervisor = Supervisor()
