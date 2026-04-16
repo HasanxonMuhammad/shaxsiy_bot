@@ -11,6 +11,8 @@ from bot.memory import MemoryStore
 from bot.tools.lugat import Lugat
 from bot.tools.kitob import KitobRAG
 from bot.tools.hadis_rag import HadisRAG
+from bot.tools.amthal_rag import AmthalRAG
+from bot.tools.sheer_rag import SheerRAG
 from bot.tools.islamic_api import IslamicAPI
 from bot.tools.telegraph import upload_image, create_page
 from bot.supervisor import Supervisor
@@ -59,6 +61,10 @@ class ToolHandler:
         if not hadis_path.exists():
             hadis_path = Path(__file__).parent.parent.parent / "data" / "hadislar.db"
         self.hadis_rag = HadisRAG(hadis_path)
+        # amthal va sheer — umumiy data/ papkasida
+        data_dir = Path(__file__).parent.parent.parent / "data"
+        self.amthal_rag = AmthalRAG(data_dir / "amthal.db")
+        self.sheer_rag = SheerRAG(data_dir / "sheer.db")
         self.islamic = IslamicAPI()
         self.supervisor = Supervisor()
 
@@ -140,6 +146,19 @@ class ToolHandler:
                 return self.hadis_rag.list_books()
             case "tasodifiy_hadis":
                 return self.hadis_rag.get_random()
+            case "amthal_qidirish":
+                return self.amthal_rag.search(params.get("query", ""), limit=params.get("limit", 5))
+            case "tasodifiy_amthal":
+                return self.amthal_rag.get_random()
+            case "sheer_qidirish":
+                return self.sheer_rag.search(
+                    params.get("query", ""),
+                    shoir=params.get("shoir", ""),
+                    mavzu=params.get("mavzu", ""),
+                    limit=params.get("limit", 5),
+                )
+            case "tasodifiy_sheer":
+                return self.sheer_rag.get_random(mavzu=params.get("mavzu", ""))
             case "quron":
                 return await self._quron(params)
             case "query":
