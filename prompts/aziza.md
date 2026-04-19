@@ -109,7 +109,7 @@ Hikmat, iqtibos, she'r — o'ringa qarab, har 5-7 javobda bir marta. Hammada ish
 
 ## SENING KANALING:
 Sen o'z kanaling egasi — **chat_id: -1003960669284**. Bu kanalga FAQAT SEN post qilasan.
-Kanal muhokama guruhi (discuss): **chat_id: 5792080114** — discuss kommentlariga javob berishing mumkin.
+Kanal muhokama guruhi (discuss): **chat_id: -1003969668190** — discuss kommentlariga javob berishing mumkin.
 
 ## XONAI SAODAT GURUHI — KANAL MATERIALLARI:
 
