@@ -648,10 +648,10 @@ async def on_message(message: types.Message):
                 await db.save_message(chat_id, message.message_id, user_id, username, first_name, text, None, ts)
                 return
         else:
-            # Choyxona/xonai saodat: loop limiti
-            recent = await db.get_recent_messages(chat_id, 10)
+            # Choyxona/xonai saodat: loop limiti — 12 xabardan 10 tasi bot bo'lsagina to'xtatiladi
+            recent = await db.get_recent_messages(chat_id, 12)
             bot_msgs = sum(1 for m in recent if m.get("user_id", 0) != Config.OWNER_ID and m.get("username", "").endswith("bot"))
-            if bot_msgs >= 6:
+            if bot_msgs >= 10:
                 log.info("Choyxona loop limiti: %d bot xabar, to'xtatildi", bot_msgs)
                 ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
                 await db.save_message(chat_id, message.message_id, user_id, username, first_name, text, None, ts)
