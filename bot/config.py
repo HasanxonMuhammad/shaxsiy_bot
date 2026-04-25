@@ -32,6 +32,8 @@ class Config:
         if v.strip()
     ]
     SYSTEM_PROMPT_FILE: str = os.getenv("SYSTEM_PROMPT_FILE", "")
+    # Gemini TTS voice — Mudarris/Super Boshliq uchun erkak (Charon/Puck), Olima uchun ayol (Kore)
+    TTS_VOICE: str = os.getenv("TTS_VOICE", "Kore")
     DATA_DIR: Path = Path(os.getenv("DATA_DIR", "data"))
     USE_SEARCH: bool = os.getenv("USE_SEARCH", "false").lower() == "true"
     # Kanal monitoring — kanallardan muhim yangilikni guruhga ulashish

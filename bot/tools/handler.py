@@ -492,7 +492,7 @@ class ToolHandler:
                     "speechConfig": {
                         "voiceConfig": {
                             "prebuiltVoiceConfig": {
-                                "voiceName": "Kore"
+                                "voiceName": Config.TTS_VOICE
                             }
                         }
                     }
