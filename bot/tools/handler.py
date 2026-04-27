@@ -20,29 +20,87 @@ from bot.supervisor import Supervisor
 log = logging.getLogger(__name__)
 
 
+def _find_balanced_json(text: str, start: int) -> int:
+    """text[start] = '{' dan boshlab tegishli '}' pozitsiyasini topadi (string-aware).
+    Topilmasa -1 qaytaradi.
+    """
+    depth = 0
+    in_str = False
+    escape = False
+    i = start
+    while i < len(text):
+        c = text[i]
+        if escape:
+            escape = False
+        elif c == "\\":
+            escape = True
+        elif in_str:
+            if c == '"':
+                in_str = False
+        elif c == '"':
+            in_str = True
+        elif c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return i + 1
+        i += 1
+    return -1
+
+
+def strip_tool_blocks(text: str) -> str:
+    """Matndagi barcha [TOOL:name]{...} bloklarini olib tashlaydi (balanced brace)."""
+    out = []
+    i = 0
+    while i < len(text):
+        m = re.match(r"\[TOOL:\w+\]\s*\{", text[i:])
+        if not m:
+            out.append(text[i])
+            i += 1
+            continue
+        brace = i + m.end() - 1
+        end = _find_balanced_json(text, brace)
+        if end < 0:
+            # Yopuvchi qavs topilmadi — eat qilmaymiz
+            out.append(text[i])
+            i += 1
+        else:
+            i = end
+    return "".join(out)
+
+
 def parse_response(text: str) -> tuple[str, dict | None]:
     """
     Bot javobini parse qiladi.
-    [TOOL:name]{"param": "value"} → tool call
+    [TOOL:name]{"param": "value"} → tool call (faqat birinchisi bajariladi)
     [NO_ACTION] → hech narsa
     oddiy matn → reply
+
+    Ortiqcha [TOOL:...] bloklari MATNDAN OLIB TASHLANADI — chatga sizib chiqmaydi.
     """
-    m = re.search(r"\[TOOL:(\w+)\](\{.*\})", text, re.DOTALL)
+    tool_call = None
+    m = re.search(r"\[TOOL:(\w+)\]\s*\{", text)
     if m:
-        tool_name = m.group(1)
-        try:
-            params = json.loads(m.group(2))
-            # Tool dan keyingi matnni ham qaytarish
-            remaining = text[:m.start()].strip() + text[m.end():].strip()
-            remaining = re.sub(r"\[REACT:[^\]]+\]", "", remaining).strip()
-            return remaining, {"name": tool_name, "params": params}
-        except json.JSONDecodeError:
-            pass
+        brace = m.end() - 1  # '{' pozitsiyasi
+        end = _find_balanced_json(text, brace)
+        if end > 0:
+            try:
+                params = json.loads(text[brace:end])
+                tool_call = {"name": m.group(1), "params": params}
+                text = text[:m.start()] + text[end:]
+            except json.JSONDecodeError:
+                log.warning("Tool JSON parse xato: %s", text[brace:end][:200])
 
-    if text.strip() == "[NO_ACTION]":
-        return "", None
+    # Qoldiq tool bloklari va react tag larni tozalash (har holatda — leak oldini olish)
+    text = strip_tool_blocks(text)
+    text = re.sub(r"\[REACT:[^\]]+\]", "", text)
 
-    return text.strip(), None
+    cleaned = text.strip()
+    if cleaned == "[NO_ACTION]" or not cleaned:
+        return "", tool_call
+
+    return cleaned, tool_call
 
 
 class ToolHandler:

@@ -100,7 +100,8 @@ async def inner_voice_loop(bot, ai, chat_id: int, bot_name: str, topics=None, mi
 
             if response and "[NO_ACTION]" not in response and len(response) > 10:
                 import re
-                clean = re.sub(r"\[TOOL:\w+\]\{[^}]*\}", "", response).strip()
+                from bot.tools.handler import strip_tool_blocks
+                clean = strip_tool_blocks(response)
                 clean = re.sub(r"\[REACT:[^\]]+\]", "", clean).strip()
                 clean = re.sub(r"\[NO_ACTION\]", "", clean).strip()
 

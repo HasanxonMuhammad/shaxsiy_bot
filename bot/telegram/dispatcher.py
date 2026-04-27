@@ -11,6 +11,7 @@ from bot.db import Database
 from bot.ai import GeminiEngine
 from bot.memory import MemoryStore
 from bot.tools import ToolHandler
+from bot.tools.handler import strip_tool_blocks
 from bot.telegram.spam import SpamFilter
 
 log = logging.getLogger(__name__)
@@ -426,7 +427,7 @@ async def _handle_response(bot: Bot, ai: GeminiEngine, db: Database,
             )
             final_text = reply_text or tool_response or result
             if final_text and "[NO_ACTION]" not in final_text:
-                final_text = re.sub(r"\[TOOL:\w+\]\{.*?\}", "", final_text, flags=re.DOTALL).strip()
+                final_text = strip_tool_blocks(final_text)
                 final_text = re.sub(r"\[REACT:[^\]]+\]", "", final_text).strip()
                 for chunk in _split(final_text, 4000):
                     try:
@@ -1128,8 +1129,7 @@ async def _olima_morning_loop(bot, ai):
             )
 
             if response and len(response.strip()) > 10:
-                import re
-                clean = re.sub(r"\[TOOL:\w+\]\{[^}]*\}", "", response).strip()
+                clean = strip_tool_blocks(response)
                 clean = re.sub(r"\[REACT:[^\]]+\]", "", clean).strip()
                 clean = re.sub(r"\[NO_ACTION\]", "", clean).strip()
                 if clean:
