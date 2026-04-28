@@ -14,6 +14,12 @@ class Database:
         await self._db.execute("PRAGMA foreign_keys=ON")
         schema = (Path(__file__).parent / "schema.sql").read_text()
         await self._db.executescript(schema)
+        # Migratsiya: eski reminders jadvali repeat ustunisiz bo'lsa qo'shamiz
+        try:
+            await self._db.execute("ALTER TABLE reminders ADD COLUMN repeat TEXT DEFAULT NULL")
+            await self._db.commit()
+        except Exception:
+            pass  # ustun allaqachon bor
 
     async def close(self):
         if self._db:
@@ -120,12 +126,13 @@ class Database:
 
     # ── Reminders ─────────────────────────────────────────────
     async def save_reminder(
-        self, chat_id: int, user_id: int, text: str, trigger_at: str
+        self, chat_id: int, user_id: int, text: str, trigger_at: str,
+        repeat: str | None = None,
     ) -> int:
         cursor = await self._db.execute(
-            """INSERT INTO reminders (chat_id, user_id, text, trigger_at, completed)
-               VALUES (?, ?, ?, ?, 0)""",
-            (chat_id, user_id, text, trigger_at),
+            """INSERT INTO reminders (chat_id, user_id, text, trigger_at, repeat, completed)
+               VALUES (?, ?, ?, ?, ?, 0)""",
+            (chat_id, user_id, text, trigger_at, repeat),
         )
         await self._db.commit()
         return cursor.lastrowid
@@ -133,19 +140,28 @@ class Database:
     async def get_due_reminders(self) -> list[dict]:
         now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
         cursor = await self._db.execute(
-            """SELECT id, chat_id, user_id, text, trigger_at
+            """SELECT id, chat_id, user_id, text, trigger_at, repeat
                FROM reminders WHERE completed = 0 AND trigger_at <= ?""",
             (now,),
         )
         rows = await cursor.fetchall()
         return [
-            dict(id=r[0], chat_id=r[1], user_id=r[2], text=r[3], trigger_at=r[4])
+            dict(id=r[0], chat_id=r[1], user_id=r[2], text=r[3],
+                 trigger_at=r[4], repeat=r[5])
             for r in rows
         ]
 
     async def complete_reminder(self, reminder_id: int):
         await self._db.execute(
             "UPDATE reminders SET completed = 1 WHERE id = ?", (reminder_id,)
+        )
+        await self._db.commit()
+
+    async def reschedule_reminder(self, reminder_id: int, next_trigger_at: str):
+        """Takror reminder uchun: trigger_at ni keyingi vaqtga ko'taradi, completed qilmaydi."""
+        await self._db.execute(
+            "UPDATE reminders SET trigger_at = ? WHERE id = ?",
+            (next_trigger_at, reminder_id),
         )
         await self._db.commit()
 

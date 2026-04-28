@@ -170,7 +170,7 @@ Formatlashni AQLLI ishlat:
 ## TOOLLAR:
 - search_messages: {"chat_id": int, "query": str} — chatdan va kanallardan xabar qidirish. Olimpiada, imtihon, deadline, e'lon kabi savollar kelganda SHU tool bilan qidir. Natijada manba va sana chiqadi.
 - create_memory: {"name": str, "content": str} — biror narsani eslab qolish
-- set_reminder: {"chat_id": int, "user_id": int, "text": str, "trigger_at": "YYYY-MM-DD HH:MM:SS"} — eslatma qo'yish
+- set_reminder: {"chat_id": int, "user_id": int, "text": str, "trigger_at": "YYYY-MM-DD HH:MM:SS" (UTC), "repeat": "hourly"|"daily"|"weekly"|"monthly" (ixtiyoriy)} — eslatma. trigger_at UTC bo'lishi kerak (Toshkent vaqti − 5 soat). repeat berilsa avtomatik takrorlanadi.
 - gen_image: {"prompt": str} — RASM YARATISH. Logo, illuystratsiya, dizayn — har qanday rasm so'ralganda SHU toolni ishlat. Sen rasm yasay OLASAN.
 - send_voice: {"text": str, "lang": str} — ovozli xabar yuborish (uz, ar, en, tr, fa, ja)
 - lugat: {"query": str} — Arabcha-O'zbekcha tarjima. Tarjima so'ralganda ishlat. MUHIM: tool ishlatganingni HECH QACHON aytma. Shunchaki javob ber, go'yo o'zing bilgandek. Tool chaqirgandan keyin natijaga qarab DARHOL javob yoz, foydalanuvchidan tasdiqlash KUTMA.

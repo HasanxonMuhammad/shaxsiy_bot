@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.enums import ChatAction
@@ -818,16 +818,50 @@ QISQA yoz, 2-3 jumla. Guruh muhitiga mos, samimiy uslubda. Link qo'sh agar bor b
 
 # ── Background tasks ──────────────────────────────────────────
 
+_REPEAT_DELTAS = {
+    "hourly": timedelta(hours=1),
+    "daily": timedelta(days=1),
+    "weekly": timedelta(days=7),
+    "monthly": timedelta(days=30),
+}
+
+
+def _next_trigger(trigger_at: str, repeat: str) -> str | None:
+    """Takror reminder uchun keyingi vaqtni hisoblaydi. Topilmasa None."""
+    delta = _REPEAT_DELTAS.get(repeat.lower().strip())
+    if not delta:
+        return None
+    try:
+        dt = datetime.strptime(trigger_at, "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return None
+    nxt = dt + delta
+    # Agar kelajak vaqt bo'lguncha bir necha siklni o'tib ketgan bo'lsa, hozirgi vaqtdan oldinga olib chiqamiz
+    now = datetime.utcnow()
+    while nxt <= now:
+        nxt += delta
+    return nxt.strftime("%Y-%m-%d %H:%M:%S")
+
+
 async def reminder_loop(bot: Bot):
     while True:
         await asyncio.sleep(30)
         try:
             reminders = await db.get_due_reminders()
             for r in reminders:
-                await bot.send_message(
-                    r["chat_id"],
-                    f"⏰🤲 Eslatma: {r['text']}"
-                )
+                try:
+                    await bot.send_message(r["chat_id"], f"⏰🤲 Eslatma: {r['text']}")
+                except Exception as e:
+                    log.error("Reminder yuborishda xato (id=%s): %s", r["id"], e)
+
+                repeat = r.get("repeat")
+                if repeat:
+                    nxt = _next_trigger(r["trigger_at"], repeat)
+                    if nxt:
+                        await db.reschedule_reminder(r["id"], nxt)
+                        log.info("Reminder #%s takrorlandi → %s (%s)", r["id"], nxt, repeat)
+                        continue
+                    log.warning("Reminder #%s repeat='%s' tushunilmadi, complete qilindi", r["id"], repeat)
                 await db.complete_reminder(r["id"])
         except Exception as e:
             log.error("Reminder xatosi: %s", e)

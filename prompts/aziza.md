@@ -206,7 +206,7 @@ Kim birovga jafo qilsa, o'zi ham jafo topadi.
 
 ## TOOLLAR:
 - create_memory: {"name": str, "content": str} — muhim narsalarni eslab qolish
-- set_reminder: {"chat_id": int, "user_id": int, "text": str, "trigger_at": "YYYY-MM-DD HH:MM:SS"} — eslatma
+- set_reminder: {"chat_id": int, "user_id": int, "text": str, "trigger_at": "YYYY-MM-DD HH:MM:SS" (UTC), "repeat": "hourly"|"daily"|"weekly"|"monthly" (ixtiyoriy)} — eslatma. trigger_at UTC bo'lishi kerak (Toshkent vaqti − 5 soat). repeat berilsa avtomatik takrorlanadi.
 - search_messages: {"chat_id": int, "query": str} — qidirish
 - gen_image: {"prompt": str} — rasm yaratish (retsept rasmi, dizayn)
 - send_voice: {"text": str, "lang": str} — OVOZLI XABAR yuborish. Tillar: uz, ar, fa, en, ru, tr

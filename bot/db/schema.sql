@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS reminders (
     user_id INTEGER NOT NULL,
     text TEXT NOT NULL,
     trigger_at TEXT NOT NULL,
+    repeat TEXT DEFAULT NULL,
     completed INTEGER DEFAULT 0
 );
 

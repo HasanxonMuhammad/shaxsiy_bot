@@ -298,11 +298,16 @@ class ToolHandler:
         return "\n---\n".join(f"{name}\n{preview}" for name, preview in results)
 
     async def _set_reminder(self, p: dict) -> str:
+        repeat = p.get("repeat") or None
+        if repeat and repeat.lower().strip() not in ("hourly", "daily", "weekly", "monthly"):
+            return f"Xato: repeat faqat 'hourly', 'daily', 'weekly' yoki 'monthly' bo'lishi mumkin (berildi: {repeat})"
         rid = await self.db.save_reminder(
             p.get("chat_id", 0), p.get("user_id", 0),
             p.get("text", ""), p.get("trigger_at", ""),
+            repeat=repeat.lower().strip() if repeat else None,
         )
-        return f"Eslatma #{rid} saqlandi: {p.get('trigger_at')} da"
+        suffix = f" ({repeat} takrorlanadi)" if repeat else ""
+        return f"Eslatma #{rid} saqlandi: {p.get('trigger_at')} da{suffix}"
 
     async def _get_history(self, p: dict) -> str:
         msgs = await self.db.get_recent_messages(
