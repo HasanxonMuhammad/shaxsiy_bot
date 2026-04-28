@@ -195,8 +195,12 @@ async def process_messages(chat_id: int, messages: list[dict]):
 
     history = await db.get_recent_messages(chat_id, 15)
 
-    # XML format (prompt injection himoyali)
-    ctx = "<chat_history>\n"
+    # Joriy kontekst — bot tool chaqirganida shu chat_id ni ishlatishi kerak
+    is_private = chat_id > 0
+    ctx = (
+        f'<current_context chat_id="{chat_id}" is_private="{str(is_private).lower()}"/>\n'
+        f'<chat_history>\n'
+    )
     for m in history:
         ctx += (
             f'<msg id="{m["message_id"]}" user="{m["username"] or "unknown"}" '
