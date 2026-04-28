@@ -646,7 +646,7 @@ class ToolHandler:
             return f"SQL xato: {e}"
 
     async def _send_poll(self, p: dict) -> str:
-        """Guruhga so'rovnoma yuborish."""
+        """Guruhga so'rovnoma yoki quiz yuborish."""
         if not hasattr(self, '_bot') or not self._bot:
             return "Bot ulanmagan"
         chat_id = p.get("chat_id", 0)
@@ -654,14 +654,43 @@ class ToolHandler:
         options = p.get("options", [])
         if not chat_id or not question or len(options) < 2:
             return "chat_id, question va kamida 2 ta option kerak"
+
+        poll_type = (p.get("type") or "regular").lower().strip()
+        if poll_type not in ("regular", "quiz"):
+            return f"Xato: type 'regular' yoki 'quiz' bo'lishi kerak (berildi: {poll_type})"
+
         try:
             from aiogram.types import InputPollOption
-            poll_options = [InputPollOption(text=o) for o in options[:10]]
-            await self._bot.send_poll(
-                chat_id, question=question, options=poll_options,
+            poll_options = [InputPollOption(text=str(o)) for o in options[:10]]
+
+            kwargs = dict(
+                chat_id=chat_id,
+                question=question,
+                options=poll_options,
                 is_anonymous=p.get("anonymous", True),
+                type=poll_type,
             )
-            return "So'rovnoma yuborildi"
+            if poll_type == "regular":
+                kwargs["allows_multiple_answers"] = bool(p.get("multiple", False))
+            else:  # quiz
+                correct = p.get("correct_option_id")
+                if correct is None:
+                    return "Quiz uchun correct_option_id kerak (0 dan boshlanadi)"
+                try:
+                    correct = int(correct)
+                except (ValueError, TypeError):
+                    return "correct_option_id raqam bo'lishi kerak"
+                if not (0 <= correct < len(poll_options)):
+                    return f"correct_option_id 0 dan {len(poll_options)-1} gacha bo'lishi kerak"
+                kwargs["correct_option_id"] = correct
+                explanation = p.get("explanation")
+                if explanation:
+                    kwargs["explanation"] = str(explanation)[:200]
+                    kwargs["explanation_parse_mode"] = "HTML"
+
+            await self._bot.send_poll(**kwargs)
+            label = "Quiz" if poll_type == "quiz" else "So'rovnoma"
+            return f"{label} yuborildi"
         except Exception as e:
             return f"So'rovnoma xatosi: {e}"
 
