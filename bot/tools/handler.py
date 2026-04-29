@@ -52,7 +52,11 @@ def _find_balanced_json(text: str, start: int) -> int:
 
 
 def strip_tool_blocks(text: str) -> str:
-    """Matndagi barcha [TOOL:name]{...} bloklarini olib tashlaydi (balanced brace)."""
+    """Matndagi barcha [TOOL:name]{...} bloklarini olib tashlaydi (balanced brace).
+
+    Agar [TOOL:...] ochilib yopilmagan bo'lsa (model javobi kesilgan) — undan
+    boshlab oxirigacha hammasini tashlab yuboramiz: bu garbage chatga sizmasin.
+    """
     out = []
     i = 0
     while i < len(text):
@@ -64,11 +68,10 @@ def strip_tool_blocks(text: str) -> str:
         brace = i + m.end() - 1
         end = _find_balanced_json(text, brace)
         if end < 0:
-            # Yopuvchi qavs topilmadi — eat qilmaymiz
-            out.append(text[i])
-            i += 1
-        else:
-            i = end
+            # Yopuvchi '}' topilmadi — javob kesilgan. [TOOL: dan boshlab to'xtaymiz.
+            log.warning("Kesilgan [TOOL:...] bloki tashlandi (%d belgi)", len(text) - i)
+            break
+        i = end
     return "".join(out)
 
 
@@ -92,7 +95,14 @@ def parse_response(text: str) -> tuple[str, dict | None]:
                 tool_call = {"name": m.group(1), "params": params}
                 text = text[:m.start()] + text[end:]
             except json.JSONDecodeError:
-                log.warning("Tool JSON parse xato: %s", text[brace:end][:200])
+                # JSON buzilgan — tool call sifatida bajarib bo'lmaydi.
+                # Lekin matndan blokni butunlay olib tashlaymiz, leak bo'lmasin.
+                log.warning("Tool JSON parse xato (%s) — blok tashlandi", m.group(1))
+                text = text[:m.start()] + text[end:]
+        else:
+            # Yopuvchi '}' topilmadi (javob kesilgan) — [TOOL: dan oxirigacha tashlandi.
+            log.warning("Kesilgan [TOOL:%s] — javobning qolgan qismi tushirildi", m.group(1))
+            text = text[:m.start()]
 
     # Qoldiq tool bloklari va react tag larni tozalash (har holatda — leak oldini olish)
     text = strip_tool_blocks(text)

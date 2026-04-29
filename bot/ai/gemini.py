@@ -108,7 +108,7 @@ class GeminiEngine:
         body = {
             "contents": contents,
             "systemInstruction": {"parts": [{"text": system_prompt}]},
-            "generationConfig": {"temperature": 0.9, "maxOutputTokens": 4096},
+            "generationConfig": {"temperature": 0.9, "maxOutputTokens": 16384},
         }
 
         http = await self._get_http()
@@ -156,7 +156,7 @@ class GeminiEngine:
         body = {
             "contents": contents,
             "systemInstruction": {"parts": [{"text": system_prompt}]},
-            "generationConfig": {"temperature": 0.9, "maxOutputTokens": 4096},
+            "generationConfig": {"temperature": 0.9, "maxOutputTokens": 16384},
         }
         if use_search:
             body["tools"] = [{"google_search": {}}]
@@ -259,7 +259,7 @@ class GeminiEngine:
                     model_name=self._model_name,
                     system_instruction=system_prompt,
                     generation_config=genai.GenerationConfig(
-                        temperature=0.9, max_output_tokens=4096,
+                        temperature=0.9, max_output_tokens=16384,
                     ),
                 )
                 log.info("Gemini SDK (kalit #%d, urinish %d)...", self._current_key + 1, attempt + 1)
