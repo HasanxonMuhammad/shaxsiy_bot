@@ -421,15 +421,33 @@ async def _handle_response(bot: Bot, ai: GeminiEngine, db: Database,
                 await bot.send_message(chat_id, "Ovozli xabar yuborishda xato chiqdi",
                                        reply_to_message_id=last_msg_id)
         else:
-            tool_response = await ai.chat(
-                build_system_prompt(),
-                [
-                    {"role": "user", "text": messages[-1].get("text", "")},
-                    {"role": "model", "text": response},
-                    {"role": "user", "text": f"Tool natijasi: {result[:1000]}. Shu natijaga qarab foydalanuvchiga javob ber."},
-                ],
-            )
-            final_text = reply_text or tool_response or result
+            # Tool natijasidan keyin LLM ga qaytib javobni shakllantirishni so'raymiz.
+            # Agar model yana tool chaqirsa — chain qilib bajaramiz (max 3 zanjir).
+            history = [
+                {"role": "user", "text": messages[-1].get("text", "")},
+                {"role": "model", "text": response},
+                {"role": "user", "text": f"Tool natijasi: {result[:1500]}. Shu natijaga qarab foydalanuvchiga javob ber."},
+            ]
+            tool_response = await ai.chat(build_system_prompt(), history)
+
+            chain_count = 0
+            while chain_count < 3 and tool_response:
+                _, chain_tool = parse_response(tool_response)
+                if not chain_tool:
+                    break
+                chain_result = await tools.execute(chain_tool)
+                log.info("Chained tool %s: %s", chain_tool["name"], chain_result[:100])
+                history.append({"role": "model", "text": tool_response})
+                history.append({
+                    "role": "user",
+                    "text": f"Tool natijasi: {chain_result[:1500]}. Shu natijaga qarab foydalanuvchiga to'liq, yakuniy javob ber. Yana tool chaqirma — endi yakuniy javob.",
+                })
+                tool_response = await ai.chat(build_system_prompt(), history)
+                chain_count += 1
+
+            # Tool natijasidan keyin yaratilgan javob — eng yaxshi (formatlangan, kontekstli).
+            # reply_text ko'pincha intro ("xo'p qilaman", "qaray-chi") — uni tashlaymiz.
+            final_text = tool_response or reply_text or result
             if final_text and "[NO_ACTION]" not in final_text:
                 final_text = strip_tool_blocks(final_text)
                 final_text = re.sub(r"\[REACT:[^\]]+\]", "", final_text).strip()
