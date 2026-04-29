@@ -7,3 +7,7 @@ ChatExport_*
 venv/
 __pycache__/
 *.pyc
+
+# Ingestion oraliq fayllari (DB yig'ilgandan keyin kerak emas)
+scripts/ingest_books/out/
+logs/

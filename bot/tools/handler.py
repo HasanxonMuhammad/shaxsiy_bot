@@ -13,6 +13,8 @@ from bot.tools.kitob import KitobRAG
 from bot.tools.hadis_rag import HadisRAG
 from bot.tools.amthal_rag import AmthalRAG
 from bot.tools.sheer_rag import SheerRAG
+from bot.tools.tabir_rag import TabirRAG
+from bot.tools.dalil_rag import DalilRAG
 from bot.tools.islamic_api import IslamicAPI
 from bot.tools.telegraph import upload_image, create_page
 from bot.supervisor import Supervisor
@@ -123,6 +125,9 @@ class ToolHandler:
         data_dir = Path(__file__).parent.parent.parent / "data"
         self.amthal_rag = AmthalRAG(data_dir / "amthal.db")
         self.sheer_rag = SheerRAG(data_dir / "sheer.db")
+        # tabir (gap yasash iboralari) va dalil (savollar) — Mudarris uchun
+        self.tabir_rag = TabirRAG(data_dir / "tabir.db")
+        self.dalil_rag = DalilRAG(data_dir / "dalil.db")
         self.islamic = IslamicAPI()
         self.supervisor = Supervisor()
 
@@ -217,6 +222,23 @@ class ToolHandler:
                 )
             case "tasodifiy_sheer":
                 return self.sheer_rag.get_random(mavzu=params.get("mavzu", ""))
+            case "tabir_qidirish":
+                return self.tabir_rag.search(
+                    params.get("mavzu", "") or params.get("query", ""),
+                    limit=params.get("limit", 3),
+                )
+            case "tasodifiy_tabir":
+                return self.tabir_rag.get_random(mavzu=params.get("mavzu", ""))
+            case "tabir_mavzular":
+                return self.tabir_rag.list_topics()
+            case "dalil_savol":
+                return self.dalil_rag.search(
+                    mavzu=params.get("mavzu", ""),
+                    level=params.get("level", ""),
+                    limit=params.get("limit", 5),
+                )
+            case "dalil_mavzular":
+                return self.dalil_rag.list_topics()
             case "quron":
                 return await self._quron(params)
             case "query":
