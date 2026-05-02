@@ -211,7 +211,13 @@ class GeminiEngine:
                     log.warning("Vaqtinchalik xato — %.1fs kutish", delay)
                     await asyncio.sleep(min(delay, 30))
                 else:
-                    log.error("Gemini xatosi: %s", error_msg[:200])
+                    # error_msg bo'sh bo'lsa — to'liq javobni ko'rsatamiz (debug)
+                    if not error_msg:
+                        import json as _json
+                        log.error("Gemini noma'lum javob (HTTP %d): %s",
+                                  resp.status, _json.dumps(data, ensure_ascii=False)[:500])
+                    else:
+                        log.error("Gemini xatosi: %s", error_msg[:200])
                     self.stats.errors += 1
                     return ""
 
@@ -219,7 +225,8 @@ class GeminiEngine:
                 log.warning("Gemini timeout — qayta urinish")
                 await asyncio.sleep(2)
             except Exception as e:
-                log.error("Gemini xatosi: %s", str(e)[:200])
+                log.error("Gemini exception (%s): %s",
+                          type(e).__name__, str(e)[:200] or repr(e)[:200])
                 self.stats.errors += 1
                 return ""
 
