@@ -114,11 +114,11 @@ class GeminiEngine:
         self._vertex_creds = None
         self._vertex_token: str | None = None
         self._vertex_token_expires: float = 0
-        # Context Cache: system prompt'ni Vertex'da kesh qilish uchun
-        # (har xabarda 12K+ token qaytarib yuborilmasligi uchun)
-        self._cache_id: str | None = None
-        self._cache_system_prompt: str | None = None
-        self._cache_expires: float = 0
+        # Context Cache: system prompt + tools'ni Vertex'da kesh qilish.
+        # Vertex qoidasi: cachedContent ishlatilsa, tools va systemInstruction
+        # request body'ga qo'yish mumkin emas — ular cache ichida bo'lishi shart.
+        # Shuning uchun (system_prompt, use_search) juftligi bo'yicha alohida cache.
+        self._caches: dict[tuple[str, bool], dict] = {}  # key -> {"id":..., "expires":..., "prompt":...}
         self._cache_lock: asyncio.Lock | None = None
         if self._use_vertex:
             log.info("Vertex AI rejimi: project=%s region=%s",
@@ -153,28 +153,30 @@ class GeminiEngine:
         )
         return self._vertex_token
 
-    async def _get_or_create_cache(self, system_prompt: str) -> str | None:
+    async def _get_or_create_cache(self, system_prompt: str, use_search: bool = False) -> str | None:
         """Vertex Context Cache yaratish/qaytarish.
-        System prompt'ni bir marta cache'ga yuklab, har keyingi so'rovda
-        cachedContent: <id> sifatida ulanadi (input narxi 75% kam).
-        Xato bo'lsa None qaytaradi — chaqiruvchi no-cache flow bilan davom etadi.
+
+        (system_prompt, use_search) juftligi bo'yicha alohida cache (chunki
+        Vertex tools'ni cache ichida saqlaydi). Cache TTL 1 soat.
+        Xato bo'lsa None — chaqiruvchi no-cache flow bilan davom etadi.
         """
         if not self._use_vertex:
             return None
         if self._cache_lock is None:
             self._cache_lock = asyncio.Lock()
+        key = (system_prompt, use_search)
         async with self._cache_lock:
             now = time.time()
-            # Mavjud cache yaroqli va system prompt o'zgarmagan
-            if (self._cache_id and now < self._cache_expires - 120
-                    and self._cache_system_prompt == system_prompt):
-                return self._cache_id
+            entry = self._caches.get(key)
+            if entry and now < entry["expires"] - 120:
+                return entry["id"]
 
-            # System prompt o'zgargan bo'lsa eskini bekor qilamiz
-            if self._cache_id and self._cache_system_prompt != system_prompt:
-                log.info("System prompt o'zgardi — eski cache bekor qilinadi")
-                await self._delete_cache(self._cache_id)
-                self._cache_id = None
+            # Boshqa system_prompt bilan eski cache bo'lsa, uni bekor qilamiz
+            for old_key in list(self._caches.keys()):
+                if old_key[0] != system_prompt:
+                    old = self._caches.pop(old_key)
+                    log.info("Eski cache bekor qilinadi: %s", old["id"].split("/")[-1])
+                    asyncio.create_task(self._delete_cache(old["id"]))
 
             # Yangi cache yaratish
             url = VERTEX_CACHE_URL_TPL.format(
@@ -182,7 +184,7 @@ class GeminiEngine:
                 project=self._vertex_project,
                 region=self._vertex_region,
             )
-            body = {
+            body: dict = {
                 "model": (
                     f"projects/{self._vertex_project}/locations/{self._vertex_region}"
                     f"/publishers/google/models/{self._model_name}"
@@ -190,6 +192,11 @@ class GeminiEngine:
                 "systemInstruction": {"parts": [{"text": system_prompt}]},
                 "ttl": f"{VERTEX_CACHE_TTL_SEC}s",
             }
+            # Tools ham cache ichiga "baked in" bo'lishi kerak — Vertex'da
+            # cachedContent va tools'ni request body'da birga ishlatib bo'lmaydi.
+            if use_search:
+                body["tools"] = [{"googleSearch": {}}]
+
             headers = {
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {self._get_vertex_token()}",
@@ -199,16 +206,18 @@ class GeminiEngine:
                 async with http.post(url, json=body, headers=headers) as resp:
                     data = await resp.json()
                 if resp.status == 200 and data.get("name"):
-                    self._cache_id = data["name"]
-                    self._cache_system_prompt = system_prompt
-                    self._cache_expires = now + VERTEX_CACHE_TTL_SEC
-                    log.info("Cache yaratildi: %s (TTL %ds, system %d belgi)",
-                             self._cache_id.split("/")[-1],
-                             VERTEX_CACHE_TTL_SEC, len(system_prompt))
-                    return self._cache_id
-                # Cache yaratib bo'lmadi
+                    cache_id = data["name"]
+                    self._caches[key] = {
+                        "id": cache_id,
+                        "expires": now + VERTEX_CACHE_TTL_SEC,
+                    }
+                    log.info("Cache yaratildi: %s (TTL %ds, search=%s, system %d belgi)",
+                             cache_id.split("/")[-1], VERTEX_CACHE_TTL_SEC,
+                             use_search, len(system_prompt))
+                    return cache_id
                 err = data.get("error", {}).get("message", "")[:200]
-                log.warning("Cache yaratish xato (HTTP %d): %s", resp.status, err)
+                log.warning("Cache yaratish xato (HTTP %d, search=%s): %s",
+                            resp.status, use_search, err)
                 return None
             except Exception as e:
                 log.warning("Cache yaratish exception: %s", str(e)[:200] or repr(e)[:200])
@@ -228,11 +237,18 @@ class GeminiEngine:
         except Exception as e:
             log.debug("Cache delete exception: %s", e)
 
-    def _invalidate_cache(self) -> None:
-        """Joriy cache'ni darhol bekor qilish (system prompt yangilangan deb taxmin)."""
-        self._cache_id = None
-        self._cache_system_prompt = None
-        self._cache_expires = 0
+    def _invalidate_cache(self, system_prompt: str | None = None, use_search: bool | None = None) -> None:
+        """Cache'ni darhol bekor qilish.
+        Argument bo'lmasa — barcha cache'larni tozalaymiz.
+        """
+        if system_prompt is None:
+            self._caches.clear()
+            return
+        # Aniq juftlikni o'chirish (yoki use_search'ning ikkalasini)
+        keys = [k for k in self._caches.keys()
+                if k[0] == system_prompt and (use_search is None or k[1] == use_search)]
+        for k in keys:
+            self._caches.pop(k, None)
 
     def _build_request(self, model: str, stream: bool = False) -> tuple[str, dict]:
         """Joriy rejimga qarab URL va headers qaytaradi.
@@ -335,26 +351,27 @@ class GeminiEngine:
                 parts.append({"text": msg["text"]})
             contents.append({"role": msg["role"], "parts": parts})
 
-        # Vertex'da context cache ishlatishga urinamiz — system prompt'ni qaytarib
-        # yubormay, faqat cache ID bilan reference qilamiz (75% input arzon).
+        # Vertex Context Cache: system prompt + tools'ni keshlaymiz.
+        # Cache ichidan: systemInstruction va (kerak bo'lsa) tools.
+        # Request body'da: faqat contents va generationConfig.
         cache_id: str | None = None
         if self._use_vertex:
-            cache_id = await self._get_or_create_cache(system_prompt)
+            cache_id = await self._get_or_create_cache(system_prompt, use_search)
 
         body: dict = {
             "contents": contents,
             "generationConfig": {"temperature": 0.9, "maxOutputTokens": 16384},
         }
         if cache_id:
-            # Cached system instruction — bytelar qaytarib yuborilmaydi
+            # Cache'da systemInstruction va tools allaqachon bor
             body["cachedContent"] = cache_id
         else:
-            # Cache ishlamadi yoki AI Studio rejimi — eski yo'l
+            # No-cache flow (cache yaratib bo'lmadi yoki AI Studio rejimi)
             body["systemInstruction"] = {"parts": [{"text": system_prompt}]}
-        if use_search:
-            body["tools"] = [
-                {"googleSearch": {}} if self._use_vertex else {"google_search": {}}
-            ]
+            if use_search:
+                body["tools"] = [
+                    {"googleSearch": {}} if self._use_vertex else {"google_search": {}}
+                ]
 
         # Retry hisobi: Vertex'da bitta token, AI Studio'da har bir kalit uchun urinish
         total_attempts = MAX_RETRIES if self._use_vertex else max(len(self._keys), 1) * MAX_RETRIES
@@ -413,9 +430,13 @@ class GeminiEngine:
                                  or "cachedcontent" in error_msg.lower()
                                  or resp.status == 400):
                     log.warning("Cache xato — bekor qilib no-cache bilan retry: %s", error_msg[:120])
-                    self._invalidate_cache()
+                    self._invalidate_cache(system_prompt, use_search)
                     body.pop("cachedContent", None)
                     body["systemInstruction"] = {"parts": [{"text": system_prompt}]}
+                    if use_search:
+                        body["tools"] = [
+                            {"googleSearch": {}} if self._use_vertex else {"google_search": {}}
+                        ]
                     cache_id = None
                     continue
 
@@ -491,7 +512,8 @@ class GeminiEngine:
                          media["mime"], len(raw) if isinstance(raw, bytes) else len(encoded))
             contents.append({"role": msg["role"], "parts": parts})
 
-        cache_id = await self._get_or_create_cache(system_prompt)
+        # Media so'rovlarida search'siz cache (tools=False)
+        cache_id = await self._get_or_create_cache(system_prompt, use_search=False)
         body: dict = {
             "contents": contents,
             "generationConfig": {"temperature": 0.9, "maxOutputTokens": 16384},
