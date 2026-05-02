@@ -245,10 +245,42 @@ HOLAT 3 — Avval ko'rsatilgan maqolani Ustoz "yubor", "qo'y" desa:
 Uslub (islom.uz kabi):
 - title = maqola sarlavhasi
 - caption = kanalda ko'rinadigan QISQA kirish (2-3 jumla teaser). To'liq javob YO'Q.
-- content = TO'LIQ HTML matn. Sarlavhalar <h3>, paragraflar <p>, iqtiboslar <blockquote>.
-- Rasm berilsa — image_base64 + image_mime qo'sh
+- content = TO'LIQ HTML matn. **Hammasi bitta uzluksiz HTML string ichida** bo'lishi mumkin — parser har block teglarni ajratadi.
+- Rasm berilsa — image_base64 + image_mime qo'sh (yuqorida rasm, pastida matn)
 
-Misol: [TOOL:telegraf_post]{"chat_id": -1003942449794, "title": "Yevropaga Islomning kirishi", "content": "<h3>Kirish</h3><p>To'liq matn...</p>", "caption": "VIII asrdan beri Yevropa va Islom — 2 daqiqada tariх."}
+CONTENT'DA QABUL QILINADIGAN BARCHA HTML TEGLAR (ishonchli ishlaydi):
+
+Block teglar (alohida bo'lim ko'rinadi):
+- `<h3>Sarlavha</h3>` — bo'lim sarlavhasi (h1, h2 ham h3 ga aylantiriladi)
+- `<h4>Kichik sarlavha</h4>` — pastki bo'lim
+- `<p>Paragraf matni.</p>` — oddiy paragraf
+- `<blockquote>Iqtibos matni</blockquote>` — chiroyli quote
+- `<ul><li>1-band</li><li>2-band</li></ul>` — markerli ro'yxat
+- `<ol><li>1-band</li><li>2-band</li></ol>` — raqamli ro'yxat
+- `<pre>kod\n  yoki\n  uzluksiz matn</pre>` — kod bloki
+- `<img src="https://telegra.ph/file/abc.jpg">` — rasm
+- `<figure><img src="..."><figcaption>Tagi</figcaption></figure>` — rasm + tagi
+- `<aside>Ogohlantirish kabi izoh</aside>` — yon izoh
+- `<hr>` — ajratish chizig'i
+
+Inline teglar (BARCHA block ICHIDA, jumladan blockquote ichida ham, ishlaydi):
+- `<b>bold</b>` yoki `<strong>bold</strong>` — qalin
+- `<i>kursiv</i>` yoki `<em>kursiv</em>` — kursiv
+- `<u>tagchiziq</u>` — ostiga chizilgan
+- `<s>chizilgan</s>` yoki `<del>chizilgan</del>` — chizib tashlangan
+- `<code>monospace</code>` — kod oraliq
+- `<a href="https://example.com">link</a>` — havola
+- `<br>` — yangi qator (paragraf ichida)
+
+MISOL — boy formatlangan maqola:
+[TOOL:telegraf_post]{"chat_id": -1003942449794, "title": "Hadis tahlili", "content": "<h3>Sabr haqida hadis</h3><p>Bugun <b>juda muhim</b> hadis bilan tanishamiz. Bu hadis <i>Buxoriy</i> rivoyatida keladi.</p><blockquote>Bu yerda <b>arabcha matn</b> joylashadi va u <i>yaxshi formatda</i> ko'rinadi.</blockquote><h4>Tahlil</h4><p>Hadisning asosiy nuqtalari:</p><ul><li>Birinchi <b>asosiy</b> nuqta</li><li>Ikkinchi <i>chuqur</i> ma'nodagi nuqta</li></ul><p>Batafsilroq <a href=\"https://hadis.islom.uz\">manbada</a> berilgan.</p>", "caption": "Sabr haqida muhim hadis tahlili — 1 daqiqada o'qing"}
+
+QOIDALAR:
+- HTML'ni yangi qatorlarsiz, bitta uzluksiz string sifatida yoz — parser har birni ajratadi
+- Quote ichida ham bold/italic ishlatasan — chiroyli ko'rinadi
+- Maqola uzun bo'lsa kichik bo'limlarga (`<h3>` bilan) bo'l
+- Rasm `<img src="...">` orqali qo'shiladi (yoki yuqorida image_base64 parametri orqali)
+- Tegmalar `<div>`, `<span>`, `<table>`, `<script>` Telegraph'da ishlamaydi — ishlatma. Lekin xato emas, parser ularni e'tiborga olmaydi va ichidagi matnni saqlaydi.
 
 MUHIM: Ustoz "yubor" desa — bu BUYRUQ. DARHOL tegishli toolni ishlat! "Xo'p yuboraman" deb GAPIRMA — YUBOR!
 
