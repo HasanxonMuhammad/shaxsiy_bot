@@ -281,9 +281,22 @@ class GeminiEngine:
                         return text
                     # Bo'sh javob — google_search olib retry
                     finish_reason = candidate.get("finishReason", "UNKNOWN")
+                    # UNEXPECTED_TOOL_CALL — model native tool'larga adashib chaqiruv yubordi.
+                    # Qayta urinish foydasi yo'q (har gal shu xato qaytadi). Search'ni o'chirib bir marta urinib, bo'lmasa to'xtaymiz.
+                    if finish_reason == "UNEXPECTED_TOOL_CALL":
+                        if "tools" in body:
+                            log.warning("UNEXPECTED_TOOL_CALL — search o'chirib bir marta urinib ko'raman")
+                            body.pop("tools", None)
+                            self.stats.record(duration_ms, False)
+                            await asyncio.sleep(1)
+                            continue
+                        else:
+                            log.error("UNEXPECTED_TOOL_CALL search'siz ham — bo'sh javob")
+                            self.stats.record(duration_ms, False)
+                            return ""
                     log.warning("Gemini bo'sh javob (finishReason=%s, urinish %d) — search o'chirib qayta", finish_reason, attempt + 1)
                     self.stats.record(duration_ms, False)
-                    body.pop("tools", None)  # google_search chalkashtiryapti
+                    body.pop("tools", None)
                     await asyncio.sleep(1)
                     continue
 

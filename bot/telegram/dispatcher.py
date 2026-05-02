@@ -422,28 +422,36 @@ async def _handle_response(bot: Bot, ai: GeminiEngine, db: Database,
                                        reply_to_message_id=last_msg_id)
         else:
             # Tool natijasidan keyin LLM ga qaytib javobni shakllantirishni so'raymiz.
-            # Agar model yana tool chaqirsa — chain qilib bajaramiz (max 3 zanjir).
+            # Yakuniy harakat tool'lari (post yuborish, ban va h.k.) qaytadan
+            # chain'lanmaydi — bir marta bajarilgan, tugagan.
+            FINAL_ACTION_TOOLS = {
+                "telegraf_post", "kanalga_post", "guruhga_yoz",
+                "send_poll", "send_voice", "gen_image",
+                "ban_user", "kick_user", "mute_user", "unban_user",
+                "delete_message", "set_reminder", "save_lesson",
+                "sv_restart", "sv_deploy", "sv_edit",
+            }
             history = [
                 {"role": "user", "text": messages[-1].get("text", "")},
                 {"role": "model", "text": response},
-                {"role": "user", "text": f"Tool natijasi: {result[:1500]}. Shu natijaga qarab foydalanuvchiga javob ber."},
+                {"role": "user", "text": f"Tool natijasi: {result[:1500]}. Shu natijaga qarab foydalanuvchiga javob ber. Yana tool CHAQIRMA — bu yakuniy javob bo'lsin."},
             ]
             tool_response = await ai.chat(build_system_prompt(), history)
 
-            chain_count = 0
-            while chain_count < 3 and tool_response:
+            # Chain'ni faqat 1 ta marta ruxsat etamiz va yakuniy harakat tool'larini chain'lamaymiz
+            # (telegraf_post → telegraf_post — bekor takror, qimmat va xato).
+            if (tool_call["name"] not in FINAL_ACTION_TOOLS) and tool_response:
                 _, chain_tool = parse_response(tool_response)
-                if not chain_tool:
-                    break
-                chain_result = await tools.execute(chain_tool)
-                log.info("Chained tool %s: %s", chain_tool["name"], chain_result[:100])
-                history.append({"role": "model", "text": tool_response})
-                history.append({
-                    "role": "user",
-                    "text": f"Tool natijasi: {chain_result[:1500]}. Shu natijaga qarab foydalanuvchiga to'liq, yakuniy javob ber. Yana tool chaqirma — endi yakuniy javob.",
-                })
-                tool_response = await ai.chat(build_system_prompt(), history)
-                chain_count += 1
+                if chain_tool and chain_tool["name"] not in FINAL_ACTION_TOOLS \
+                        and chain_tool["name"] != tool_call["name"]:
+                    chain_result = await tools.execute(chain_tool)
+                    log.info("Chained tool %s: %s", chain_tool["name"], chain_result[:100])
+                    history.append({"role": "model", "text": tool_response})
+                    history.append({
+                        "role": "user",
+                        "text": f"Tool natijasi: {chain_result[:1500]}. Endi YAKUNIY javob ber, yana tool chaqirma.",
+                    })
+                    tool_response = await ai.chat(build_system_prompt(), history)
 
             # Tool natijasidan keyin yaratilgan javob — eng yaxshi (formatlangan, kontekstli).
             # reply_text ko'pincha intro ("xo'p qilaman", "qaray-chi") — uni tashlaymiz.
