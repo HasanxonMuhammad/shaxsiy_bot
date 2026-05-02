@@ -22,6 +22,35 @@ from bot.supervisor import Supervisor
 log = logging.getLogger(__name__)
 
 
+# Arabcha (va aloqador yozuvlar) Unicode oraliqlari
+_ARABIC_CHARS = (
+    r"؀-ۿ"      # Arabic
+    r"ݐ-ݿ"      # Arabic Supplement
+    r"ࢠ-ࣿ"      # Arabic Extended-A
+    r"ﭐ-﷿"      # Arabic Presentation Forms-A
+    r"ﹰ-﻿"      # Arabic Presentation Forms-B
+)
+_ARABIC_RUN_RE = re.compile(
+    rf"([{_ARABIC_CHARS}]+(?:[\s,،.؟!?:;\(\)\[\]\"'\-]+[{_ARABIC_CHARS}]+)*)"
+)
+
+
+def isolate_arabic(text: str) -> str:
+    """Arabcha matn bo'laklarini U+2068 (FSI) ... U+2069 (PDI) bilan o'raydi.
+
+    Telegram (va ko'p brauzerlar) RTL+LTR matnni bitta qatorda chalkashtiradi —
+    bidi izolyatsiyasi har segmentni o'z yo'nalishida ushlab turadi.
+    Xato bo'lsa asl matnni qaytaradi (fail-safe).
+    """
+    if not text or "⁨" in text:
+        return text
+    try:
+        return _ARABIC_RUN_RE.sub("⁨\\1⁩", text)
+    except Exception as e:
+        log.warning("isolate_arabic xatosi (%s) — asl matn qaytariladi", e)
+        return text
+
+
 def _find_balanced_json(text: str, start: int) -> int:
     """text[start] = '{' dan boshlab tegishli '}' pozitsiyasini topadi (string-aware).
     Topilmasa -1 qaytaradi.

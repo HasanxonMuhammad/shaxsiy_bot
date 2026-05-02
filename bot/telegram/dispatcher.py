@@ -11,7 +11,7 @@ from bot.db import Database
 from bot.ai import GeminiEngine
 from bot.memory import MemoryStore
 from bot.tools import ToolHandler
-from bot.tools.handler import strip_tool_blocks
+from bot.tools.handler import strip_tool_blocks, isolate_arabic
 from bot.telegram.spam import SpamFilter
 
 log = logging.getLogger(__name__)
@@ -451,6 +451,8 @@ async def _handle_response(bot: Bot, ai: GeminiEngine, db: Database,
             if final_text and "[NO_ACTION]" not in final_text:
                 final_text = strip_tool_blocks(final_text)
                 final_text = re.sub(r"\[REACT:[^\]]+\]", "", final_text).strip()
+                # Bidi izolyatsiya: aralash arabcha+lotin matn Telegram'da to'g'ri ko'rinadi
+                final_text = isolate_arabic(final_text)
                 for chunk in _split(final_text, 4000):
                     try:
                         await bot.send_message(chat_id, chunk,
@@ -461,6 +463,7 @@ async def _handle_response(bot: Bot, ai: GeminiEngine, db: Database,
                                                reply_to_message_id=messages[-1]["message_id"])
     elif reply_text:
         last_msg_id = messages[-1]["message_id"]
+        reply_text = isolate_arabic(reply_text)
         for chunk in _split(reply_text, 4000):
             try:
                 await bot.send_message(chat_id, chunk,
