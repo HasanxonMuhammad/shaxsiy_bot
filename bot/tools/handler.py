@@ -58,6 +58,11 @@ _BLOCKQUOTE_RE = re.compile(
     re.DOTALL | re.IGNORECASE,
 )
 
+# "Uzun" blockquote chegarasi (belgilarda) — bundan ortig'i expandable qilinadi.
+# 250 belgi ~ 4-5 qator matn (mobil ekranda). Pastroq bo'lsa juda tez-tez
+# yig'ilib bezovta qiladi, balandroq bo'lsa katta quotelar yig'ilmaydi.
+_EXPANDABLE_BLOCKQUOTE_THRESHOLD = 250
+
 
 def force_rtl_blockquote(html: str) -> str:
     """Blockquote ichida arabcha bo'lsa boshiga U+200F (RLM) qo'shadi.
@@ -84,6 +89,38 @@ def force_rtl_blockquote(html: str) -> str:
         return _BLOCKQUOTE_RE.sub(_process, html)
     except Exception as e:
         log.warning("force_rtl_blockquote xatosi (%s) — asl matn", e)
+        return html
+
+
+def expand_long_blockquotes(html: str, threshold: int = _EXPANDABLE_BLOCKQUOTE_THRESHOLD) -> str:
+    """Uzun (>250 belgi) blockquote'larga 'expandable' atributi qo'shadi.
+
+    Telegram <blockquote expandable> ni yig'iladigan ko'rinishda chiqaradi —
+    foydalanuvchi "Show more" bosib to'liq ko'radi. Qisqa quote'lar
+    o'zgarmaydi. Allaqachon expandable bo'lsa qaytalamaymiz.
+    """
+    if not html or "<blockquote" not in html.lower():
+        return html
+
+    def _process(m: "re.Match") -> str:
+        open_tag, content, close_tag = m.group(1), m.group(2), m.group(3)
+        # Allaqachon expandable bo'lsa tegmaymiz
+        if "expandable" in open_tag.lower():
+            return m.group(0)
+        # HTML teglarni yo'q qilib, sof matn uzunligini hisoblaymiz
+        plain = re.sub(r"<[^>]+>", "", content)
+        # RLM va boshqa zero-width belgilarni ham hisobga olmaymiz
+        plain = plain.replace("‏", "").replace("⁨", "").replace("⁩", "")
+        if len(plain.strip()) < threshold:
+            return m.group(0)
+        # <blockquote ...> -> <blockquote expandable ...>
+        new_open = re.sub(r"<blockquote", "<blockquote expandable", open_tag, count=1, flags=re.IGNORECASE)
+        return f"{new_open}{content}{close_tag}"
+
+    try:
+        return _BLOCKQUOTE_RE.sub(_process, html)
+    except Exception as e:
+        log.warning("expand_long_blockquotes xatosi (%s) — asl matn", e)
         return html
 
 

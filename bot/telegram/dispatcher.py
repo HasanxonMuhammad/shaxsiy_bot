@@ -11,7 +11,7 @@ from bot.db import Database
 from bot.ai import GeminiEngine
 from bot.memory import MemoryStore
 from bot.tools import ToolHandler
-from bot.tools.handler import strip_tool_blocks, isolate_arabic, force_rtl_blockquote
+from bot.tools.handler import strip_tool_blocks, isolate_arabic, force_rtl_blockquote, expand_long_blockquotes
 from bot.telegram.spam import SpamFilter
 
 log = logging.getLogger(__name__)
@@ -478,6 +478,9 @@ async def _handle_response(bot: Bot, ai: GeminiEngine, db: Database,
                 final_text = isolate_arabic(final_text)
                 # Blockquote ichida arabcha bo'lsa boshiga RLM qo'shamiz — RTL base direction
                 final_text = force_rtl_blockquote(final_text)
+                # Uzun (>250 belgi) blockquote'larni 'expandable' qilamiz —
+                # foydalanuvchi yig'ilgan ko'rinishda ko'radi, kerak bo'lsa kengaytadi
+                final_text = expand_long_blockquotes(final_text)
                 for chunk in _split(final_text, 4000):
                     try:
                         await bot.send_message(chat_id, chunk,
@@ -490,6 +493,7 @@ async def _handle_response(bot: Bot, ai: GeminiEngine, db: Database,
         last_msg_id = messages[-1]["message_id"]
         reply_text = isolate_arabic(reply_text)
         reply_text = force_rtl_blockquote(reply_text)
+        reply_text = expand_long_blockquotes(reply_text)
         for chunk in _split(reply_text, 4000):
             try:
                 await bot.send_message(chat_id, chunk,
