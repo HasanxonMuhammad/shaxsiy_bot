@@ -20,13 +20,18 @@ log = logging.getLogger(__name__)
 API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
 STREAM_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?alt=sse&key={key}"
 
-# Vertex AI (service account)
-VERTEX_URL = (
-    "https://{region}-aiplatform.googleapis.com/v1/projects/{project}"
+# Vertex AI (service account). "global" region URL'da hostname'siz prefix oladi:
+#   global  -> https://aiplatform.googleapis.com/...
+#   us-*    -> https://us-central1-aiplatform.googleapis.com/...
+def _vertex_host(region: str) -> str:
+    return "aiplatform.googleapis.com" if region == "global" else f"{region}-aiplatform.googleapis.com"
+
+VERTEX_URL_TPL = (
+    "https://{host}/v1/projects/{project}"
     "/locations/{region}/publishers/google/models/{model}:generateContent"
 )
-VERTEX_STREAM_URL = (
-    "https://{region}-aiplatform.googleapis.com/v1/projects/{project}"
+VERTEX_STREAM_URL_TPL = (
+    "https://{host}/v1/projects/{project}"
     "/locations/{region}/publishers/google/models/{model}:streamGenerateContent?alt=sse"
 )
 
@@ -144,7 +149,9 @@ class GeminiEngine:
         """
         headers: dict = {"Content-Type": "application/json"}
         if self._use_vertex:
-            url = (VERTEX_STREAM_URL if stream else VERTEX_URL).format(
+            tpl = VERTEX_STREAM_URL_TPL if stream else VERTEX_URL_TPL
+            url = tpl.format(
+                host=_vertex_host(self._vertex_region),
                 project=self._vertex_project,
                 region=self._vertex_region,
                 model=model,
