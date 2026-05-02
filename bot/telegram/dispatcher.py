@@ -1079,7 +1079,14 @@ async def start_bot():
     db = Database(Config.db_path())
     await db.connect()
 
-    ai = GeminiEngine(Config.GEMINI_API_KEYS, Config.GEMINI_MODEL, Config.FALLBACK_MODEL)
+    ai = GeminiEngine(
+        Config.GEMINI_API_KEYS,
+        Config.GEMINI_MODEL,
+        Config.FALLBACK_MODEL,
+        vertex_project=Config.VERTEX_PROJECT,
+        vertex_region=Config.VERTEX_REGION,
+        vertex_key_path=Config.VERTEX_KEY_PATH,
+    )
     memory = MemoryStore(Config.memories_dir())
     tools = ToolHandler(db, memory)
     buffer.on_flush = process_messages

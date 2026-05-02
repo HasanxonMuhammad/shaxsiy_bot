@@ -1,5 +1,12 @@
-"""Gemini AI Engine — SDK pattern asosida retry, error handling, context management."""
+"""Gemini AI Engine — SDK pattern asosida retry, error handling, context management.
+
+Ikki rejimda ishlaydi:
+  1. AI Studio API key (default) — generativelanguage.googleapis.com, ?key=...
+  2. Vertex AI service account — *-aiplatform.googleapis.com, Bearer token
+     Vertex rejimida $300 Free Trial krediti ishlaydi (AI Studio'da yo'q).
+"""
 import asyncio
+import base64
 import logging
 import time
 from dataclasses import dataclass, field
@@ -9,8 +16,19 @@ import google.generativeai as genai
 
 log = logging.getLogger(__name__)
 
+# AI Studio (API key) — default
 API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
 STREAM_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?alt=sse&key={key}"
+
+# Vertex AI (service account)
+VERTEX_URL = (
+    "https://{region}-aiplatform.googleapis.com/v1/projects/{project}"
+    "/locations/{region}/publishers/google/models/{model}:generateContent"
+)
+VERTEX_STREAM_URL = (
+    "https://{region}-aiplatform.googleapis.com/v1/projects/{project}"
+    "/locations/{region}/publishers/google/models/{model}:streamGenerateContent?alt=sse"
+)
 
 # SDK patterndan: retry konstantalari
 MAX_RETRIES = 3
@@ -63,18 +81,81 @@ class EngineStats:
 
 
 class GeminiEngine:
-    def __init__(self, api_keys: list[str], model: str = "gemini-2.5-flash", fallback_model: str | None = None):
+    def __init__(
+        self,
+        api_keys: list[str],
+        model: str = "gemini-2.5-flash",
+        fallback_model: str | None = None,
+        vertex_project: str | None = None,
+        vertex_region: str = "us-central1",
+        vertex_key_path: str | None = None,
+    ):
         self._keys = api_keys
         self._model_name = model
         self._fallback_model = fallback_model
         self._current_key = 0
         self._http: aiohttp.ClientSession | None = None
         self.stats = EngineStats()
+        # Vertex AI rejimi (agar konfiguratsiya berilgan bo'lsa)
+        self._vertex_project = vertex_project
+        self._vertex_region = vertex_region
+        self._vertex_key_path = vertex_key_path
+        self._use_vertex = bool(vertex_project and vertex_key_path)
+        self._vertex_creds = None
+        self._vertex_token: str | None = None
+        self._vertex_token_expires: float = 0
+        if self._use_vertex:
+            log.info("Vertex AI rejimi: project=%s region=%s",
+                     vertex_project, vertex_region)
+        else:
+            log.info("AI Studio rejimi: %d kalit", len(api_keys))
 
     def _rotate_key(self):
+        if not self._keys:
+            return
         old = self._current_key
         self._current_key = (self._current_key + 1) % len(self._keys)
         log.info("Kalit: #%d → #%d", old + 1, self._current_key + 1)
+
+    def _get_vertex_token(self) -> str:
+        """Service account JSON kaliti bilan OAuth access token olish (cache'lanadi).
+        Token ~1 soat amal qiladi; muddati tugashidan 60 soniya oldin yangilanadi.
+        """
+        if self._vertex_token and time.time() < self._vertex_token_expires - 60:
+            return self._vertex_token
+        from google.oauth2 import service_account
+        import google.auth.transport.requests
+        creds = service_account.Credentials.from_service_account_file(
+            self._vertex_key_path,
+            scopes=["https://www.googleapis.com/auth/cloud-platform"],
+        )
+        creds.refresh(google.auth.transport.requests.Request())
+        self._vertex_creds = creds
+        self._vertex_token = creds.token
+        self._vertex_token_expires = (
+            creds.expiry.timestamp() if creds.expiry else time.time() + 3500
+        )
+        return self._vertex_token
+
+    def _build_request(self, model: str, stream: bool = False) -> tuple[str, dict]:
+        """Joriy rejimga qarab URL va headers qaytaradi.
+        Vertex bo'lsa: Bearer token, Vertex URL.
+        AI Studio bo'lsa: ?key= URL, oddiy headers.
+        """
+        headers: dict = {"Content-Type": "application/json"}
+        if self._use_vertex:
+            url = (VERTEX_STREAM_URL if stream else VERTEX_URL).format(
+                project=self._vertex_project,
+                region=self._vertex_region,
+                model=model,
+            )
+            headers["Authorization"] = f"Bearer {self._get_vertex_token()}"
+        else:
+            url = (STREAM_URL if stream else API_URL).format(
+                model=model,
+                key=self._keys[self._current_key],
+            )
+        return url, headers
 
     async def _get_http(self):
         if self._http is None or self._http.closed:
@@ -112,11 +193,11 @@ class GeminiEngine:
         }
 
         http = await self._get_http()
-        url = STREAM_URL.format(model=self._model_name, key=self._keys[self._current_key])
+        url, headers = self._build_request(self._model_name, stream=True)
         full_text = ""
 
         try:
-            async with http.post(url, json=body) as resp:
+            async with http.post(url, json=body, headers=headers) as resp:
                 if resp.status != 200:
                     # Stream ishlamasa oddiy chat ga fallback
                     return
@@ -159,18 +240,25 @@ class GeminiEngine:
             "generationConfig": {"temperature": 0.9, "maxOutputTokens": 16384},
         }
         if use_search:
-            body["tools"] = [{"google_search": {}}]
+            # Vertex AI da kalit nomi farqli: "googleSearch" (camelCase)
+            body["tools"] = [
+                {"googleSearch": {}} if self._use_vertex else {"google_search": {}}
+            ]
 
-        total_keys = len(self._keys)
+        # Retry hisobi: Vertex'da bitta token, AI Studio'da har bir kalit uchun urinish
+        total_attempts = MAX_RETRIES if self._use_vertex else max(len(self._keys), 1) * MAX_RETRIES
         http = await self._get_http()
 
-        for attempt in range(total_keys * MAX_RETRIES):
-            url = API_URL.format(model=self._model_name, key=self._keys[self._current_key])
+        for attempt in range(total_attempts):
+            url, headers = self._build_request(self._model_name, stream=False)
             start = time.time()
             try:
-                log.info("Gemini REST (kalit #%d, search=%s, urinish %d)...",
-                         self._current_key + 1, use_search, attempt + 1)
-                async with http.post(url, json=body) as resp:
+                if self._use_vertex:
+                    log.info("Vertex REST (search=%s, urinish %d)...", use_search, attempt + 1)
+                else:
+                    log.info("Gemini REST (kalit #%d, search=%s, urinish %d)...",
+                             self._current_key + 1, use_search, attempt + 1)
+                async with http.post(url, json=body, headers=headers) as resp:
                     data = await resp.json()
 
                 duration_ms = (time.time() - start) * 1000
@@ -241,11 +329,79 @@ class GeminiEngine:
             self._model_name = original_model  # keyingi so'rov uchun qaytarish
             return result
 
-        log.error("Barcha urinishlar muvaffaqiyatsiz (%d)", total_keys * MAX_RETRIES)
+        log.error("Barcha urinishlar muvaffaqiyatsiz (%d)", total_attempts)
+        return ""
+
+    async def _chat_vertex_media(self, system_prompt: str, messages: list[dict]) -> str:
+        """Vertex AI REST orqali rasm/audio yuborish (inline base64)."""
+        contents = []
+        for msg in messages:
+            parts = []
+            if msg.get("text"):
+                parts.append({"text": msg["text"]})
+            for media in msg.get("media", []):
+                # media["data"] bytes — base64 ga aylantiramiz
+                raw = media["data"]
+                if isinstance(raw, bytes):
+                    encoded = base64.b64encode(raw).decode("ascii")
+                else:
+                    encoded = raw  # allaqachon base64 bo'lsa
+                parts.append({
+                    "inlineData": {
+                        "mimeType": media["mime"],
+                        "data": encoded,
+                    }
+                })
+                log.info("Media (Vertex): %s, %d bayt",
+                         media["mime"], len(raw) if isinstance(raw, bytes) else len(encoded))
+            contents.append({"role": msg["role"], "parts": parts})
+
+        body = {
+            "contents": contents,
+            "systemInstruction": {"parts": [{"text": system_prompt}]},
+            "generationConfig": {"temperature": 0.9, "maxOutputTokens": 16384},
+        }
+        http = await self._get_http()
+
+        for attempt in range(MAX_RETRIES):
+            url, headers = self._build_request(self._model_name, stream=False)
+            start = time.time()
+            try:
+                log.info("Vertex media REST (urinish %d)...", attempt + 1)
+                async with http.post(url, json=body, headers=headers) as resp:
+                    data = await resp.json()
+                duration_ms = (time.time() - start) * 1000
+
+                if "candidates" in data and data["candidates"]:
+                    parts = data["candidates"][0].get("content", {}).get("parts", [])
+                    text = "\n".join(p["text"] for p in parts if "text" in p)
+                    if text:
+                        self.stats.record(duration_ms, True, len(text))
+                        log.info("Vertex media javob: %d belgi, %.0fms", len(text), duration_ms)
+                        return text
+
+                err = data.get("error", {}).get("message", "")
+                log.error("Vertex media xato: %s | data: %s", err[:200], str(data)[:300])
+                if "429" in str(data) or "quota" in err.lower():
+                    delay = (BASE_DELAY_MS / 1000) * (2 ** attempt)
+                    await asyncio.sleep(min(delay, 30))
+                else:
+                    self.stats.errors += 1
+                    return ""
+            except Exception as e:
+                log.error("Vertex media exception: %s", str(e)[:200] or repr(e)[:200])
+                await asyncio.sleep(2)
         return ""
 
     async def _chat_sdk(self, system_prompt: str, messages: list[dict]) -> str:
-        """SDK — media (rasm/audio) + retry."""
+        """Media (rasm/audio) bilan suhbat. Vertex rejimida REST + inline base64,
+        AI Studio rejimida google.generativeai SDK ishlatiladi.
+        """
+        # Vertex rejimi — REST orqali inline base64 yuborish
+        if self._use_vertex:
+            return await self._chat_vertex_media(system_prompt, messages)
+
+        # AI Studio SDK yo'li (eski)
         contents = []
         for msg in messages:
             parts = []
@@ -256,7 +412,7 @@ class GeminiEngine:
                 log.info("Media: %s, %d bayt", media["mime"], len(media["data"]))
             contents.append({"role": msg["role"], "parts": parts})
 
-        total_keys = len(self._keys)
+        total_keys = max(len(self._keys), 1)
 
         for attempt in range(total_keys * MAX_RETRIES):
             start = time.time()

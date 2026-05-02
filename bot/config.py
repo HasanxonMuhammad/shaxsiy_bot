@@ -25,6 +25,10 @@ class Config:
     ]
     GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
     FALLBACK_MODEL: str | None = os.getenv("FALLBACK_MODEL") or None
+    # Vertex AI (service account orqali) — agar berilgan bo'lsa AI Studio o'rnida ishlaydi.
+    VERTEX_PROJECT: str | None = os.getenv("VERTEX_PROJECT") or None
+    VERTEX_REGION: str = os.getenv("VERTEX_REGION", "us-central1")
+    VERTEX_KEY_PATH: str | None = os.getenv("VERTEX_KEY_PATH") or None
     OWNER_ID: int = int(os.getenv("OWNER_ID", "0"))
     VIP_IDS: list[int] = [
         int(v.strip())
