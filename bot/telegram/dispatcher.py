@@ -25,14 +25,13 @@ QURAN_REACTIONS = ["❤", "🤲", "🔥", "����", "💯"]
 GREETING_REACTIONS = ["👋", "❤", "🤲"]
 
 
-def build_system_prompt() -> str:
+def _current_time_label() -> tuple[str, str, str]:
+    """Toshkent vaqti, kun bo'limi va to'liq sana qaytaradi."""
     from datetime import datetime, timezone, timedelta
-    from pathlib import Path
-
     uz_time = datetime.now(timezone(timedelta(hours=5)))
     time_str = uz_time.strftime("%H:%M")
+    date_str = uz_time.strftime("%Y-%m-%d (%A)")
     hour = uz_time.hour
-
     if 5 <= hour < 12:
         vaqt = "ertalab"
     elif 12 <= hour < 17:
@@ -41,8 +40,18 @@ def build_system_prompt() -> str:
         vaqt = "kechqurun"
     else:
         vaqt = "kechasi"
+    return time_str, vaqt, date_str
 
-    # Prompt fayldan o'qish
+
+def build_system_prompt() -> str:
+    """Static system prompt — har xabarda bir xil baytlar (cache prefix uchun).
+
+    {time}/{vaqt} dynamic — promptga emas, dispatcher tomonidan user message
+    contextiga inject qilinadi. Shu sababli prompt baytlari barqaror va
+    Vertex Context Caching bilan kesh qilinishi mumkin.
+    """
+    from pathlib import Path
+
     prompt_file = Config.SYSTEM_PROMPT_FILE
     if prompt_file:
         path = Path(prompt_file)
@@ -52,14 +61,12 @@ def build_system_prompt() -> str:
                 template
                 .replace("{bot_name}", Config.BOT_NAME)
                 .replace("{owner_id}", str(Config.OWNER_ID))
-                .replace("{time}", time_str)
-                .replace("{vaqt}", vaqt)
             )
 
-    # Default prompt
+    # Default prompt (static)
     return f"""Sen "{Config.BOT_NAME}". Quvnoq, hazilkash yordamchi.
 
-Hozir soat {time_str} ({vaqt}). Vaqt haqida har safar gapirma.
+(Hozirgi sana va vaqt har xabarda foydalanuvchi xabari oldidan beriladi.)
 
 - QISQA javob — 1-3 jumla
 - Hazilkash, samimiy
@@ -72,6 +79,12 @@ Hozir soat {time_str} ({vaqt}). Vaqt haqida har safar gapirma.
 Toollar: search_messages, create_memory, set_reminder
 
 Javob formati: oddiy matn | [TOOL:name]{{params}} | [REACT:emoji]"""
+
+
+def build_time_prefix() -> str:
+    """User xabari oldiga qo'yiladigan vaqt context — har xabarda yangilanadi."""
+    time_str, vaqt, date_str = _current_time_label()
+    return f"[Sana: {date_str}, soat {time_str} ({vaqt})]\n"
 
 
 class MessageBuffer:
@@ -195,11 +208,13 @@ async def process_messages(chat_id: int, messages: list[dict]):
 
     history = await db.get_recent_messages(chat_id, 15)
 
-    # Joriy kontekst — bot tool chaqirganida shu chat_id ni ishlatishi kerak
+    # Joriy kontekst — bot tool chaqirganida shu chat_id ni ishlatishi kerak.
+    # Vaqt context ham shu yerga kiradi (system prompt'dan olingan, cache prefix barqaror bo'lishi uchun).
     is_private = chat_id > 0
     ctx = (
-        f'<current_context chat_id="{chat_id}" is_private="{str(is_private).lower()}"/>\n'
-        f'<chat_history>\n'
+        build_time_prefix()
+        + f'<current_context chat_id="{chat_id}" is_private="{str(is_private).lower()}"/>\n'
+        + f'<chat_history>\n'
     )
     for m in history:
         ctx += (

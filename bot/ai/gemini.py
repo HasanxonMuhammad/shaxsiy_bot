@@ -34,6 +34,11 @@ VERTEX_STREAM_URL_TPL = (
     "https://{host}/v1/projects/{project}"
     "/locations/{region}/publishers/google/models/{model}:streamGenerateContent?alt=sse"
 )
+VERTEX_CACHE_URL_TPL = (
+    "https://{host}/v1/projects/{project}/locations/{region}/cachedContents"
+)
+# Vertex Context Cache TTL — bot 60 minut'da yangilab turadi.
+VERTEX_CACHE_TTL_SEC = 3600
 
 # SDK patterndan: retry konstantalari
 MAX_RETRIES = 3
@@ -109,6 +114,12 @@ class GeminiEngine:
         self._vertex_creds = None
         self._vertex_token: str | None = None
         self._vertex_token_expires: float = 0
+        # Context Cache: system prompt'ni Vertex'da kesh qilish uchun
+        # (har xabarda 12K+ token qaytarib yuborilmasligi uchun)
+        self._cache_id: str | None = None
+        self._cache_system_prompt: str | None = None
+        self._cache_expires: float = 0
+        self._cache_lock: asyncio.Lock | None = None
         if self._use_vertex:
             log.info("Vertex AI rejimi: project=%s region=%s",
                      vertex_project, vertex_region)
@@ -141,6 +152,87 @@ class GeminiEngine:
             creds.expiry.timestamp() if creds.expiry else time.time() + 3500
         )
         return self._vertex_token
+
+    async def _get_or_create_cache(self, system_prompt: str) -> str | None:
+        """Vertex Context Cache yaratish/qaytarish.
+        System prompt'ni bir marta cache'ga yuklab, har keyingi so'rovda
+        cachedContent: <id> sifatida ulanadi (input narxi 75% kam).
+        Xato bo'lsa None qaytaradi — chaqiruvchi no-cache flow bilan davom etadi.
+        """
+        if not self._use_vertex:
+            return None
+        if self._cache_lock is None:
+            self._cache_lock = asyncio.Lock()
+        async with self._cache_lock:
+            now = time.time()
+            # Mavjud cache yaroqli va system prompt o'zgarmagan
+            if (self._cache_id and now < self._cache_expires - 120
+                    and self._cache_system_prompt == system_prompt):
+                return self._cache_id
+
+            # System prompt o'zgargan bo'lsa eskini bekor qilamiz
+            if self._cache_id and self._cache_system_prompt != system_prompt:
+                log.info("System prompt o'zgardi — eski cache bekor qilinadi")
+                await self._delete_cache(self._cache_id)
+                self._cache_id = None
+
+            # Yangi cache yaratish
+            url = VERTEX_CACHE_URL_TPL.format(
+                host=_vertex_host(self._vertex_region),
+                project=self._vertex_project,
+                region=self._vertex_region,
+            )
+            body = {
+                "model": (
+                    f"projects/{self._vertex_project}/locations/{self._vertex_region}"
+                    f"/publishers/google/models/{self._model_name}"
+                ),
+                "systemInstruction": {"parts": [{"text": system_prompt}]},
+                "ttl": f"{VERTEX_CACHE_TTL_SEC}s",
+            }
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self._get_vertex_token()}",
+            }
+            try:
+                http = await self._get_http()
+                async with http.post(url, json=body, headers=headers) as resp:
+                    data = await resp.json()
+                if resp.status == 200 and data.get("name"):
+                    self._cache_id = data["name"]
+                    self._cache_system_prompt = system_prompt
+                    self._cache_expires = now + VERTEX_CACHE_TTL_SEC
+                    log.info("Cache yaratildi: %s (TTL %ds, system %d belgi)",
+                             self._cache_id.split("/")[-1],
+                             VERTEX_CACHE_TTL_SEC, len(system_prompt))
+                    return self._cache_id
+                # Cache yaratib bo'lmadi
+                err = data.get("error", {}).get("message", "")[:200]
+                log.warning("Cache yaratish xato (HTTP %d): %s", resp.status, err)
+                return None
+            except Exception as e:
+                log.warning("Cache yaratish exception: %s", str(e)[:200] or repr(e)[:200])
+                return None
+
+    async def _delete_cache(self, cache_id: str) -> None:
+        """Cache'ni o'chirib yuborish. Xato bo'lsa silently."""
+        try:
+            url = (
+                f"https://{_vertex_host(self._vertex_region)}/v1/{cache_id}"
+            )
+            headers = {"Authorization": f"Bearer {self._get_vertex_token()}"}
+            http = await self._get_http()
+            async with http.delete(url, headers=headers) as resp:
+                if resp.status not in (200, 404):
+                    log.warning("Cache delete xato (HTTP %d)", resp.status)
+        except Exception as e:
+            log.debug("Cache delete exception: %s", e)
+
+    def _invalidate_cache(self) -> None:
+        """Joriy cache'ni darhol bekor qilish (system prompt yangilangan deb taxmin)."""
+        self._cache_id = None
+        self._cache_system_prompt = None
+        self._cache_expires = 0
 
     def _build_request(self, model: str, stream: bool = False) -> tuple[str, dict]:
         """Joriy rejimga qarab URL va headers qaytaradi.
@@ -235,7 +327,7 @@ class GeminiEngine:
             log.error("Gemini stream xatosi: %s", e)
 
     async def _chat_rest(self, system_prompt: str, messages: list[dict], use_search: bool = False) -> str:
-        """REST API — google_search + retry logic."""
+        """REST API — google_search + retry logic + Vertex Context Cache."""
         contents = []
         for msg in messages:
             parts = []
@@ -243,13 +335,23 @@ class GeminiEngine:
                 parts.append({"text": msg["text"]})
             contents.append({"role": msg["role"], "parts": parts})
 
-        body = {
+        # Vertex'da context cache ishlatishga urinamiz — system prompt'ni qaytarib
+        # yubormay, faqat cache ID bilan reference qilamiz (75% input arzon).
+        cache_id: str | None = None
+        if self._use_vertex:
+            cache_id = await self._get_or_create_cache(system_prompt)
+
+        body: dict = {
             "contents": contents,
-            "systemInstruction": {"parts": [{"text": system_prompt}]},
             "generationConfig": {"temperature": 0.9, "maxOutputTokens": 16384},
         }
+        if cache_id:
+            # Cached system instruction — bytelar qaytarib yuborilmaydi
+            body["cachedContent"] = cache_id
+        else:
+            # Cache ishlamadi yoki AI Studio rejimi — eski yo'l
+            body["systemInstruction"] = {"parts": [{"text": system_prompt}]}
         if use_search:
-            # Vertex AI da kalit nomi farqli: "googleSearch" (camelCase)
             body["tools"] = [
                 {"googleSearch": {}} if self._use_vertex else {"google_search": {}}
             ]
@@ -305,6 +407,17 @@ class GeminiEngine:
                 error_msg = data.get("error", {}).get("message", "")
                 error_type = _classify_error(error_msg)
                 self.stats.record(duration_ms, False)
+
+                # Cache bilan bog'liq xato — cache'ni bekor qilib, no-cache bilan retry
+                if cache_id and ("cache" in error_msg.lower()
+                                 or "cachedcontent" in error_msg.lower()
+                                 or resp.status == 400):
+                    log.warning("Cache xato — bekor qilib no-cache bilan retry: %s", error_msg[:120])
+                    self._invalidate_cache()
+                    body.pop("cachedContent", None)
+                    body["systemInstruction"] = {"parts": [{"text": system_prompt}]}
+                    cache_id = None
+                    continue
 
                 if error_type == "rate_limit":
                     self.stats.rate_limited += 1
@@ -378,18 +491,23 @@ class GeminiEngine:
                          media["mime"], len(raw) if isinstance(raw, bytes) else len(encoded))
             contents.append({"role": msg["role"], "parts": parts})
 
-        body = {
+        cache_id = await self._get_or_create_cache(system_prompt)
+        body: dict = {
             "contents": contents,
-            "systemInstruction": {"parts": [{"text": system_prompt}]},
             "generationConfig": {"temperature": 0.9, "maxOutputTokens": 16384},
         }
+        if cache_id:
+            body["cachedContent"] = cache_id
+        else:
+            body["systemInstruction"] = {"parts": [{"text": system_prompt}]}
         http = await self._get_http()
 
         for attempt in range(MAX_RETRIES):
             url, headers = self._build_request(self._model_name, stream=False)
             start = time.time()
             try:
-                log.info("Vertex media REST (urinish %d)...", attempt + 1)
+                log.info("Vertex media REST (urinish %d, cache=%s)...",
+                         attempt + 1, "yes" if cache_id else "no")
                 async with http.post(url, json=body, headers=headers) as resp:
                     data = await resp.json()
                 duration_ms = (time.time() - start) * 1000
