@@ -403,18 +403,33 @@ class GeminiEngine:
                     # Bo'sh javob — google_search olib retry
                     finish_reason = candidate.get("finishReason", "UNKNOWN")
                     # UNEXPECTED_TOOL_CALL — model native tool'larga adashib chaqiruv yubordi.
-                    # Qayta urinish foydasi yo'q (har gal shu xato qaytadi). Search'ni o'chirib bir marta urinib, bo'lmasa to'xtaymiz.
+                    # Cache ishlatilayotgan bo'lsa, tools cache ichida bo'lishi mumkin —
+                    # search'siz cache'ga o'tib retry qilamiz.
                     if finish_reason == "UNEXPECTED_TOOL_CALL":
-                        if "tools" in body:
-                            log.warning("UNEXPECTED_TOOL_CALL — search o'chirib bir marta urinib ko'raman")
-                            body.pop("tools", None)
-                            self.stats.record(duration_ms, False)
+                        self.stats.record(duration_ms, False)
+                        if cache_id and use_search:
+                            # Cache'da search tools bor — search'siz cache yaratamiz
+                            log.warning("UNEXPECTED_TOOL_CALL — search'siz cache'ga o'tib retry")
+                            new_cache = await self._get_or_create_cache(system_prompt, use_search=False)
+                            if new_cache:
+                                cache_id = new_cache
+                                body["cachedContent"] = new_cache
+                                body.pop("tools", None)
+                            else:
+                                # Cache yaratilmadi — no-cache no-search yo'liga o'tamiz
+                                cache_id = None
+                                body.pop("cachedContent", None)
+                                body["systemInstruction"] = {"parts": [{"text": system_prompt}]}
+                                body.pop("tools", None)
                             await asyncio.sleep(1)
                             continue
-                        else:
-                            log.error("UNEXPECTED_TOOL_CALL search'siz ham — bo'sh javob")
-                            self.stats.record(duration_ms, False)
-                            return ""
+                        if "tools" in body:
+                            log.warning("UNEXPECTED_TOOL_CALL — search o'chirib retry")
+                            body.pop("tools", None)
+                            await asyncio.sleep(1)
+                            continue
+                        log.error("UNEXPECTED_TOOL_CALL search'siz ham — bo'sh javob")
+                        return ""
                     log.warning("Gemini bo'sh javob (finishReason=%s, urinish %d) — search o'chirib qayta", finish_reason, attempt + 1)
                     self.stats.record(duration_ms, False)
                     body.pop("tools", None)
