@@ -51,6 +51,42 @@ def isolate_arabic(text: str) -> str:
         return text
 
 
+_ARABIC_DETECT_RE = re.compile(rf"[{_ARABIC_CHARS}]")
+# blockquote (ixtiyoriy attribute bilan) — DOTALL bilan ko'p qatorli content
+_BLOCKQUOTE_RE = re.compile(
+    r"(<blockquote(?:\s[^>]*)?>)(.*?)(</blockquote>)",
+    re.DOTALL | re.IGNORECASE,
+)
+
+
+def force_rtl_blockquote(html: str) -> str:
+    """Blockquote ichida arabcha bo'lsa boshiga U+200F (RLM) qo'shadi.
+
+    Telegram va Telegraph ba'zan blockquote'ning base direction'ini LTR sifatida
+    qabul qiladi va arabcha matnni noto'g'ri tartiblaydi. RLM (Right-to-Left
+    Mark) — ko'rinmas, lekin "kuchli RTL" belgisi — base direction'ni RTL ga
+    o'rnatadi. Allaqachon RLM bo'lsa qaytalamaymiz.
+    """
+    if not html or "<blockquote" not in html.lower():
+        return html
+
+    def _process(m: "re.Match") -> str:
+        open_tag, content, close_tag = m.group(1), m.group(2), m.group(3)
+        if not _ARABIC_DETECT_RE.search(content):
+            return m.group(0)
+        # Bosh whitespace/HTML space'ni ko'cmaslik uchun avval lstrip
+        # qilmaymiz — RLM ni xom qilib qo'yamiz
+        if "‏" in content[:4]:
+            return m.group(0)
+        return f"{open_tag}‏{content}{close_tag}"
+
+    try:
+        return _BLOCKQUOTE_RE.sub(_process, html)
+    except Exception as e:
+        log.warning("force_rtl_blockquote xatosi (%s) — asl matn", e)
+        return html
+
+
 def _find_balanced_json(text: str, start: int) -> int:
     """text[start] = '{' dan boshlab tegishli '}' pozitsiyasini topadi (string-aware).
     Topilmasa -1 qaytaradi.

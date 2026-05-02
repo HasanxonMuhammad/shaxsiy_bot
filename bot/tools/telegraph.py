@@ -177,9 +177,51 @@ class _TGHTMLParser(HTMLParser):
             self._push_text(data)
 
 
+_ARABIC_RANGE_RE = re.compile(r"[؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]")
+
+
+def _force_rtl_blockquotes(nodes: list) -> list:
+    """Blockquote node'larida arabcha matn bo'lsa boshiga U+200F (RLM) qo'shadi.
+    Telegraph ham, Telegram ham blockquote'ning base direction'ini ba'zan LTR
+    deb qabul qiladi va arabcha matnni noto'g'ri tartiblaydi. RLM — ko'rinmas
+    'kuchli RTL' belgisi — base direction'ni RTL ga o'rnatadi.
+    """
+    def _has_arabic(children) -> bool:
+        for ch in children or []:
+            if isinstance(ch, str):
+                if _ARABIC_RANGE_RE.search(ch):
+                    return True
+            elif isinstance(ch, dict):
+                if _has_arabic(ch.get("children", [])):
+                    return True
+        return False
+
+    def _process(node):
+        if not isinstance(node, dict):
+            return node
+        children = node.get("children")
+        if isinstance(children, list):
+            for child in children:
+                _process(child)
+            if node.get("tag") == "blockquote" and _has_arabic(children):
+                # Birinchi child string bo'lsa unga RLM qo'shamiz, aks holda
+                # yangi RLM string'ni boshiga prepend qilamiz.
+                if children and isinstance(children[0], str):
+                    if not children[0].startswith("‏"):
+                        children[0] = "‏" + children[0]
+                else:
+                    children.insert(0, "‏")
+        return node
+
+    for node in nodes:
+        _process(node)
+    return nodes
+
+
 def html_to_nodes(html: str) -> list:
     """HTML matnni Telegraph node formatiga aylantirish.
     Block teglarni to'g'ri ajratadi, inline formatlash (b/i/code) saqlanadi.
+    Arabcha matnli blockquote'larga RLM (U+200F) qo'shiladi.
     """
     if not html:
         return [{"tag": "p", "children": [""]}]
@@ -196,7 +238,7 @@ def html_to_nodes(html: str) -> list:
     # Bo'sh natija bo'lsa — fallback
     if not parser.nodes:
         return [{"tag": "p", "children": [_strip_tags(html[:8000])]}]
-    return parser.nodes
+    return _force_rtl_blockquotes(parser.nodes)
 
 
 def _strip_tags(text: str) -> str:
