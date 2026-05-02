@@ -167,7 +167,9 @@ class GeminiEngine:
     async def _get_http(self):
         if self._http is None or self._http.closed:
             self._http = aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=60)
+                # gemini-3.1-pro-preview uzun strukturali javob uchun 60s yetmaydi.
+                # 3 daqiqa — uzun tarjima/tahlil/IV maqolalari uchun ham yetadi.
+                timeout=aiohttp.ClientTimeout(total=180, connect=20)
             )
         return self._http
 
