@@ -122,6 +122,45 @@ buffer = MessageBuffer()
 dp = Dispatcher()
 
 
+# ── Guest Mode debug logger (vaqtincha) ──────────────────────────
+# Telegram 2026-05-07 da Guest Mode joriy qildi. Bot API 9.6 da hali documented emas
+# va aiogram 3.27 da model yo'q. BotFather'da yoqilgach, kelayotgan Update'larda
+# noma'lum field'larni payqaymiz va xom JSON'ni logga yozamiz — keyin handler yozamiz.
+_KNOWN_UPDATE_CONTENT_FIELDS = {
+    "message", "edited_message", "channel_post", "edited_channel_post",
+    "business_connection", "business_message", "edited_business_message",
+    "deleted_business_messages",
+    "message_reaction", "message_reaction_count",
+    "inline_query", "chosen_inline_result", "callback_query",
+    "shipping_query", "pre_checkout_query", "purchased_paid_media",
+    "poll", "poll_answer",
+    "my_chat_member", "chat_member", "chat_join_request",
+    "chat_boost", "removed_chat_boost",
+}
+
+
+@dp.update.outer_middleware()
+async def _guest_update_logger(handler, event, data):
+    try:
+        dump = event.model_dump(exclude_none=True)
+        extras = getattr(event, "model_extra", None) or {}
+        present = set(dump.keys()) - {"update_id"}
+        unknown_present = present - _KNOWN_UPDATE_CONTENT_FIELDS
+        if extras or unknown_present or not present:
+            raw = event.model_dump_json(exclude_none=True)
+            log.warning(
+                "GUEST_CANDIDATE update_id=%s known=%s unknown=%s extras=%s raw=%s",
+                dump.get("update_id"),
+                sorted(present & _KNOWN_UPDATE_CONTENT_FIELDS),
+                sorted(unknown_present),
+                list(extras.keys()),
+                raw[:2500],
+            )
+    except Exception as e:
+        log.debug("Guest logger error: %s", e)
+    return await handler(event, data)
+
+
 def _sanitize(text: str) -> str:
     """Prompt injection himoyasi — user matnida bot buyruqlarini zararsizlantirish."""
     if not text:
