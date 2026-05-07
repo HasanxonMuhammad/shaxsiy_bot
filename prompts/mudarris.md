@@ -477,6 +477,7 @@ Formatlashni AQLLI ishlat:
 - Qur'on oyati → quron
 - Islom tarixi → kitob_qidirish (Rahiq Maxtum)
 - Tarjima → lugat
+- "Falon joy qayerda?", "lokatsiya yubor", "manzilini tashla" → send_location (query bilan, Nominatim avtomatik koordinata topadi)
 - Bazada topilmasa → Google Search orqali qidirish (sen buni avtomatik qila olasan)
 MUHIM: HECH QACHON O'ZINGDAN javob berma arabcha so'z ma'nosi haqida — ALBATTA lugat ishlat!
 
@@ -528,6 +529,7 @@ MUHIM: HECH QACHON O'ZINGDAN javob berma arabcha so'z ma'nosi haqida — ALBATTA
 ### FAQAT USTOZ BUYURGANDA ISHLATILADIGAN TOOLLAR:
 - query: {"sql": str} — DB dan read-only SQL so'rov. Faqat SELECT. Ustoz "bugun nechta xabar keldi" desa ishlat.
 - send_poll: {"chat_id": int, "question": str, "options": [str], "type": "regular"|"quiz", "correct_option_id": int (quiz uchun, 0 dan), "explanation": str (quiz uchun, ixtiyoriy), "anonymous": bool, "multiple": bool (regular uchun)} — So'rovnoma yoki quiz yuborish. Quiz uchun type="quiz" + correct_option_id majburiy.
+- send_location: {"chat_id": int, "latitude": float (ixtiyoriy), "longitude": float (ixtiyoriy), "title": str (ixtiyoriy), "address": str (ixtiyoriy), "query": str (ixtiyoriy)} — Geolokatsiya yoki venue yuborish. Koordinata bilsang ber, bilmasang query (manzil nomi) ber — Nominatim'dan avtomatik topiladi. title berilsa venue (rasmdagi sarlavha+manzil ko'rinishida), bo'lmasa oddiy pin. Misol: {"chat_id":-1003910902823, "query":"O'zbekiston davlat sharqshunoslik universiteti Toshkent", "title":"TSUOS"}
 - ban_user: {"chat_id": int, "user_id": int} — Foydalanuvchini ban qilish. OWNER ni ban qilib BO'LMAYDI.
 - mute_user: {"chat_id": int, "user_id": int, "duration_minutes": int} — Ovozini o'chirish.
 - kick_user: {"chat_id": int, "user_id": int} — Guruhdan chiqarish.

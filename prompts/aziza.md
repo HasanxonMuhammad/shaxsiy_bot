@@ -216,6 +216,7 @@ Kim birovga jafo qilsa, o'zi ham jafo topadi.
 - lugat: {"query": str} — arabcha-o'zbekcha lug'at
 - hadis: {"query": str} — hadis qidirish (manba bilan)
 - quron: {"sura": int, "ayah": int} — Qur'on oyati
+- send_location: {"chat_id": int, "query": str (manzil nomi), "title": str (ixtiyoriy)} — Geolokatsiya/venue yuborish. Koordinata bilmasang query bilan jo'nat — Nominatim avtomatik topadi. Misol: "bozor qayerda" → query="Chorsu bozori Toshkent"
 
 ## REAKSIYALAR — [REACT:emoji]:
 O'zing aqlingni ishlatib qo'y. O'rni kelganda, kayfiyatga qarab.

@@ -357,6 +357,8 @@ class ToolHandler:
                 return await self._query(params)
             case "send_poll":
                 return await self._send_poll(params)
+            case "send_location":
+                return await self._send_location(params)
             case "ban_user":
                 return await self._ban_user(params)
             case "mute_user":
@@ -827,6 +829,76 @@ class ToolHandler:
             return f"{label} yuborildi"
         except Exception as e:
             return f"So'rovnoma xatosi: {e}"
+
+    async def _send_location(self, p: dict) -> str:
+        """Geolokatsiya yoki venue (manzil + sarlavha) yuborish.
+
+        Variantlar:
+        - {"chat_id":..., "latitude":..., "longitude":...}              → oddiy pin
+        - {"chat_id":..., "latitude":..., "longitude":..., "title":..., "address":...} → venue (sarlavha + manzil bilan)
+        - {"chat_id":..., "query":"TSUOS Toshkent"}                      → manzilni Nominatim'dan izlab pin
+        - {"chat_id":..., "query":"...", "title":"TSUOS"}                → venue (address Nominatim'dan)
+        """
+        if not hasattr(self, "_bot") or not self._bot:
+            return "Bot ulanmagan"
+        chat_id = p.get("chat_id", 0)
+        if not chat_id:
+            return "chat_id kerak"
+
+        lat = p.get("latitude")
+        lon = p.get("longitude")
+        title = (p.get("title") or "").strip()
+        address = (p.get("address") or "").strip()
+        query = (p.get("query") or "").strip()
+
+        # Koordinata yo'q bo'lsa — Nominatim'dan geocoding
+        if lat is None or lon is None:
+            if not query:
+                return "latitude+longitude yoki query kerak"
+            try:
+                from bot.config import Config as _Cfg
+                url = "https://nominatim.openstreetmap.org/search"
+                params = {"q": query, "format": "json", "limit": 1, "addressdetails": 1}
+                headers = {"User-Agent": f"shaxsiy-bot/1.0 ({_Cfg.BOT_NAME})"}
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(
+                        url, params=params, headers=headers,
+                        timeout=aiohttp.ClientTimeout(total=15),
+                    ) as resp:
+                        data = await resp.json()
+                if not data:
+                    return f"Manzil topilmadi: {query}"
+                lat = float(data[0]["lat"])
+                lon = float(data[0]["lon"])
+                display = data[0].get("display_name", query)
+                if not address:
+                    address = display[:200]
+                if not title:
+                    title = display.split(",")[0].strip()[:64]
+            except Exception as e:
+                return f"Geocoding xatosi: {e}"
+
+        try:
+            lat = float(lat)
+            lon = float(lon)
+        except (ValueError, TypeError):
+            return "latitude/longitude raqam bo'lishi kerak"
+
+        try:
+            if title:
+                await self._bot.send_venue(
+                    chat_id=chat_id,
+                    latitude=lat, longitude=lon,
+                    title=title[:64],
+                    address=address[:256] if address else title[:256],
+                )
+                return f"Venue yuborildi: {title}"
+            await self._bot.send_location(
+                chat_id=chat_id, latitude=lat, longitude=lon,
+            )
+            return f"Lokatsiya yuborildi: {lat}, {lon}"
+        except Exception as e:
+            return f"Lokatsiya xatosi: {e}"
 
     async def _ban_user(self, p: dict) -> str:
         """Foydalanuvchini guruhdan ban qilish."""
