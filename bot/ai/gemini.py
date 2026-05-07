@@ -351,12 +351,16 @@ class GeminiEngine:
                 parts.append({"text": msg["text"]})
             contents.append({"role": msg["role"], "parts": parts})
 
-        # Vertex Context Cache: system prompt + tools'ni keshlaymiz.
-        # Cache ichidan: systemInstruction va (kerak bo'lsa) tools.
-        # Request body'da: faqat contents va generationConfig.
+        # Vertex Context Cache: system prompt'ni keshlaymiz.
+        # Search-li cache yaratish UNEXPECTED_TOOL_CALL ga olib keladi (model
+        # bizning [TOOL:...] format'ni googleSearch o'rniga ishlatishni xohlaydi).
+        # Shuning uchun har doim search'siz cache yaratamiz va birinchi chaqiruvda
+        # darhol ishlatamiz — bu ortiqcha retry'ni butunlay o'chiradi.
+        # Agar use_search=True bo'lsa va cache muvaffaqiyatsiz bo'lsa, no-cache
+        # yo'lida tools tuziladi (pastda).
         cache_id: str | None = None
         if self._use_vertex:
-            cache_id = await self._get_or_create_cache(system_prompt, use_search)
+            cache_id = await self._get_or_create_cache(system_prompt, use_search=False)
 
         body: dict = {
             "contents": contents,
