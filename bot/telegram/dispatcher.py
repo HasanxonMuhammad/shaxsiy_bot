@@ -1203,7 +1203,18 @@ async def start_bot():
     if "olima" in Config.BOT_NAME.lower():
         asyncio.create_task(_olima_morning_loop(bot, ai))
 
-    await dp.start_polling(bot)
+    # allowed_updates'ni aniq beramiz — eski webhook config'idan qolgan ["message", "channel_post"]
+    # ni overwrite qiladi. "guest_message" — Bot API 10.0 (2026-05-08) yangiligi.
+    await dp.start_polling(
+        bot,
+        allowed_updates=[
+            "message",
+            "edited_message",
+            "channel_post",
+            "edited_channel_post",
+            "guest_message",
+        ],
+    )
 
 
 async def _olima_morning_loop(bot, ai):
