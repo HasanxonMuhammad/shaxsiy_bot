@@ -161,6 +161,134 @@ async def _guest_update_logger(handler, event, data):
     return await handler(event, data)
 
 
+# ── Guest Mode handler ───────────────────────────────────────────
+# Bot API 10.0 (2026-05-08) — aiogram 3.27 da `Update.guest_message`
+# field hali yo'q, shuning uchun aiogram'ni chetlab o'tib qo'lda parse qilamiz.
+async def _answer_guest_query(token: str, guest_query_id: str, text: str,
+                              parse_mode: str | None = None) -> dict:
+    import aiohttp
+    url = f"https://api.telegram.org/bot{token}/answerGuestQuery"
+    payload: dict = {"guest_query_id": guest_query_id, "text": text}
+    if parse_mode:
+        payload["parse_mode"] = parse_mode
+    timeout = aiohttp.ClientTimeout(total=15)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with session.post(url, json=payload) as resp:
+            return await resp.json()
+
+
+async def _handle_guest_message(bot: Bot, guest_msg: dict):
+    """Guest mode mention'iga javob: Gemini -> answerGuestQuery."""
+    from bot.tools.handler import strip_tool_blocks
+    try:
+        guest_query_id = guest_msg.get("guest_query_id")
+        text = (guest_msg.get("text") or guest_msg.get("caption") or "").strip()
+        from_user = guest_msg.get("from") or {}
+        chat = guest_msg.get("chat") or {}
+
+        if not guest_query_id:
+            log.warning("Guest message guest_query_id'siz: %s", guest_msg)
+            return
+
+        # Boshidagi @bot mention'ni olib tashlash
+        question = text
+        for e in guest_msg.get("entities") or []:
+            if e.get("type") == "mention" and e.get("offset") == 0:
+                question = text[e.get("length", 0):].strip()
+                break
+
+        if not question:
+            await _answer_guest_query(
+                bot.token, guest_query_id,
+                "Bismillah, savolingizni yozing — yordam beraman."
+            )
+            return
+
+        log.info(
+            "GUEST query from %s (%s) chat=%s: %s",
+            from_user.get("username") or from_user.get("first_name"),
+            from_user.get("id"),
+            chat.get("title") or chat.get("id"),
+            question[:120],
+        )
+
+        # Spam regex pre-filter (AI tekshiruvisiz, tezroq)
+        if spam_filter.check(question) is True:
+            log.warning("Guest spam: %s", question[:80])
+            return
+
+        time_str, vaqt, date_str = _current_time_label()
+        ctx = (
+            f'<guest_mode time="{time_str}" vaqt="{vaqt}" date="{date_str}">\n'
+            f'  Bu — Guest Mode chaqirig\'i. Chat tarixi yo\'q, bir martalik javob.\n'
+            f'  Foydalanuvchi: {from_user.get("first_name", "")} '
+            f'(@{from_user.get("username", "noma\'lum")})\n'
+            f'  Chat: "{chat.get("title", "shaxsiy")}" ({chat.get("type", "")})\n'
+            f'  Qoidalar:\n'
+            f'  - Qisqa, aniq javob (1-3 jumla, kerak bo\'lsa ko\'proq)\n'
+            f'  - Tool ishlatma — bu yerda kontekst yo\'q, faqat matn\n'
+            f'  - Botning shaxsiyatiga sodiq qol\n'
+            f'</guest_mode>\n\n'
+            f'{question}'
+        )
+
+        conversation = [{"role": "user", "content": ctx}]
+        response = await ai.chat(
+            build_system_prompt(),
+            conversation,
+            use_search=Config.USE_SEARCH,
+        )
+
+        if not response:
+            return
+
+        # Tool block'larni olib tashla (guest mode'da bajarib bo'lmaydi)
+        clean_text = strip_tool_blocks(response)
+        clean_text = re.sub(r"\[REACT:[^\]]+\]", "", clean_text).strip()
+        if not clean_text or clean_text == "[NO_ACTION]":
+            return
+
+        # Telegram message limiti
+        if len(clean_text) > 4000:
+            clean_text = clean_text[:3950].rstrip() + "..."
+
+        result = await _answer_guest_query(
+            bot.token, guest_query_id, clean_text, parse_mode="HTML"
+        )
+        if not result.get("ok"):
+            log.warning("answerGuestQuery HTML xato: %s, plain text bilan qaytadan", result)
+            result = await _answer_guest_query(bot.token, guest_query_id, clean_text)
+            if not result.get("ok"):
+                log.error("answerGuestQuery final xato: %s", result)
+                return
+
+        log.info("GUEST javob: %d belgi, ok=%s", len(clean_text), result.get("ok"))
+
+    except Exception as e:
+        log.error("Guest handler xato: %s", e, exc_info=True)
+
+
+# Aiogram 3.27 `update.guest_message` ni bilmaydi → biz feed_update'ni
+# o'rab olib, guest_message bo'lsa qo'lda boshqaramiz, qolganini originalga uzatamiz.
+def _install_guest_hook():
+    _orig = dp.feed_update
+
+    async def _patched(target_bot, update, **kwargs):
+        try:
+            guest_msg = getattr(update, "guest_message", None)
+            if guest_msg is None:
+                extra = getattr(update, "model_extra", None) or {}
+                guest_msg = extra.get("guest_message")
+            if guest_msg:
+                asyncio.create_task(_handle_guest_message(target_bot, guest_msg))
+                return None
+        except Exception as e:
+            log.error("Guest hook detect xatosi: %s", e)
+        return await _orig(target_bot, update, **kwargs)
+
+    dp.feed_update = _patched
+
+
 def _sanitize(text: str) -> str:
     """Prompt injection himoyasi — user matnida bot buyruqlarini zararsizlantirish."""
     if not text:
@@ -1202,6 +1330,10 @@ async def start_bot():
     # Olima — ertalab Azizaxonga kunlik salom
     if "olima" in Config.BOT_NAME.lower():
         asyncio.create_task(_olima_morning_loop(bot, ai))
+
+    # Guest Mode hook — aiogram 3.27 `update.guest_message`'ni bilmaydi,
+    # biz feed_update'ni o'rab olib qo'lda handle qilamiz.
+    _install_guest_hook()
 
     # allowed_updates'ni aniq beramiz — eski webhook config'idan qolgan ["message", "channel_post"]
     # ni overwrite qiladi. "guest_message" — Bot API 10.0 (2026-05-08) yangiligi.
