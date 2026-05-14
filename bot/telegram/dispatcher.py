@@ -889,6 +889,101 @@ async def on_message(message: types.Message):
         if await db.is_muted(chat_id) and not Config.is_owner(user_id):
             return
 
+        # Mention-only guruhlar — bot faqat @mention, ism aytilganda yoki
+        # uning xabariga reply qilinganda javob beradi. Boshqa xabarlarni
+        # kontekst uchun saqlab qo'yamiz, lekin AI ga uzatmaymiz.
+        MENTION_ONLY_GROUPS = {-1003280067467}
+        if chat_id in MENTION_ONLY_GROUPS:
+            bot_username = (bot_me.username or "").lower()
+            bot_name_low = Config.BOT_NAME.lower()
+            text_lower = text.lower()
+            mentioned = bool(bot_username) and f"@{bot_username}" in text_lower
+            name_referenced = bool(bot_name_low) and re.search(
+                rf"\b{re.escape(bot_name_low)}\b", text_lower
+            ) is not None
+            replied_to_me = bool(
+                message.reply_to_message
+                and message.reply_to_message.from_user
+                and message.reply_to_message.from_user.id == bot_me.id
+            )
+            if not (mentioned or name_referenced or replied_to_me):
+                ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+                await db.save_message(
+                    chat_id, message.message_id, user_id,
+                    username, first_name, text, None, ts,
+                )
+                return
+
+        # Arab tili o'rganuvchilar guruhi (200+ a'zo, faol):
+        # — Mention/reply/ism aytilsa → AI
+        # — Owner yoki Aziza yozsa → AI
+        # — Savol patterni bor (?, ؟, "qanday", "ما", va h.k.) → AI
+        # — Ikki user reply-zanjirida gaplashayotgan bo'lsa → JIM
+        # — Aks holda kontekst uchun saqla, AI ga uzatma
+        ARAB_LEARNER_GROUP = {-1003520828779}
+        if chat_id in ARAB_LEARNER_GROUP:
+            bot_username = (bot_me.username or "").lower()
+            bot_name_low = Config.BOT_NAME.lower()
+            text_lower = text.lower()
+            mentioned = bool(bot_username) and f"@{bot_username}" in text_lower
+            name_referenced = bool(bot_name_low) and re.search(
+                rf"\b{re.escape(bot_name_low)}\b", text_lower
+            ) is not None
+            replied_to_me = bool(
+                message.reply_to_message
+                and message.reply_to_message.from_user
+                and message.reply_to_message.from_user.id == bot_me.id
+            )
+            is_owner_msg = Config.is_owner(user_id)
+            is_aziza_msg = user_id == 5792080114
+
+            # 2 user reply zanjiri tekshiruvi
+            in_two_user_convo = False
+            if (
+                message.reply_to_message
+                and message.reply_to_message.from_user
+                and message.reply_to_message.from_user.id not in (bot_me.id, user_id)
+            ):
+                replied_uid = message.reply_to_message.from_user.id
+                try:
+                    recent = await db.get_recent_messages(chat_id, 6)
+                    non_bot_uids = {
+                        m.get("user_id") for m in recent
+                        if m.get("user_id") and m.get("user_id") != bot_me.id
+                    }
+                    non_bot_uids.add(user_id)
+                    if non_bot_uids <= {user_id, replied_uid}:
+                        in_two_user_convo = True
+                except Exception:
+                    pass
+
+            QUESTION_RE = re.compile(
+                r"(\?|؟|\bqanday\b|\bnima\b|\bqaerda\b|\bkim\b|\bqachon\b|\bnega\b|"
+                r"\bqaysi\b|\bnechta\b|\bma\b|\bكيف\b|\bأين\b|\bمن\b|\bمتى\b|"
+                r"\bلماذا\b|\bأي\b|\byordam\b|\btushuntir\b|\bimdod\b|"
+                r"\biltimos\b|\bsharhlab\b|\bma'no\b|\btarjima\b)",
+                re.IGNORECASE,
+            )
+            is_question = QUESTION_RE.search(text or "") is not None
+
+            should_respond = (
+                (mentioned or name_referenced or replied_to_me or is_owner_msg or is_aziza_msg or is_question)
+                and not in_two_user_convo
+            )
+            if not should_respond:
+                ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+                await db.save_message(
+                    chat_id, message.message_id, user_id,
+                    username, first_name, text, None, ts,
+                )
+                log.debug(
+                    "Arab guruh skip: mention=%s reply=%s aziza=%s owner=%s "
+                    "question=%s two_user_convo=%s",
+                    mentioned, replied_to_me, is_aziza_msg, is_owner_msg,
+                    is_question, in_two_user_convo,
+                )
+                return
+
     # Spam filter (guruhlar uchun)
     if chat_id < 0 and not Config.is_vip(user_id):
         spam_result = spam_filter.check(text)
