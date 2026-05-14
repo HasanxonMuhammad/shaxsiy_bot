@@ -716,7 +716,22 @@ async def on_join_leave(message: types.Message):
 
 # ── Handlers ──────────────────────────────────────────────────
 
-@dp.message(F.text | F.photo | F.voice | F.audio | F.video_note)
+def _format_poll_as_text(poll: types.Poll) -> str:
+    """Quiz/so'rovnomani matn ko'rinishida ifodalash."""
+    kind = "Quiz" if poll.type == "quiz" else "So'rovnoma"
+    lines = [f"[{kind}: {poll.question}]"]
+    for i, opt in enumerate(poll.options):
+        letter = chr(ord('A') + i) if i < 26 else str(i + 1)
+        lines.append(f"{letter}) {opt.text}")
+    if poll.is_closed and poll.correct_option_id is not None:
+        ci = poll.correct_option_id
+        if 0 <= ci < len(poll.options):
+            correct_letter = chr(ord('A') + ci) if ci < 26 else str(ci + 1)
+            lines.append(f"(To'g'ri javob: {correct_letter})")
+    return "\n".join(lines)
+
+
+@dp.message(F.text | F.photo | F.voice | F.audio | F.video_note | F.poll)
 async def on_message(message: types.Message):
     chat_id = message.chat.id
     user = message.from_user
@@ -724,6 +739,8 @@ async def on_message(message: types.Message):
     username = (user.username or "") if user else ""
     first_name = (user.first_name or "Unknown") if user else "Unknown"
     text = message.text or message.caption or ""
+    if not text and message.poll:
+        text = _format_poll_as_text(message.poll)
     is_private = chat_id > 0
     tg_bot: Bot = dp["bot"]
 
@@ -985,6 +1002,27 @@ async def on_message(message: types.Message):
                 )
                 return
 
+    # Quiz/poll: guruhda avtomatik sharhlash YO'Q.
+    # Faqat: bot @mention qilingan, bot xabariga reply yoki owner so'rasagina javob beradi.
+    # Aks holda kontekst uchun saqlab, jim turamiz.
+    if message.poll and chat_id < 0:
+        bot_username_l = (bot_me.username or "").lower()
+        poll_text_lower = text.lower()
+        mentioned_in_poll = bool(bot_username_l) and f"@{bot_username_l}" in poll_text_lower
+        replied_to_me_poll = bool(
+            message.reply_to_message
+            and message.reply_to_message.from_user
+            and message.reply_to_message.from_user.id == bot_me.id
+        )
+        if not (mentioned_in_poll or replied_to_me_poll or Config.is_owner(user_id)):
+            log.info("Poll/quiz guruhda (%s) — sharhlanmaydi, kontekstga saqlandi", chat_id)
+            ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+            await db.save_message(
+                chat_id, message.message_id, user_id,
+                username, first_name, text, None, ts,
+            )
+            return
+
     # Spam filter (guruhlar uchun)
     if chat_id < 0 and not Config.is_vip(user_id):
         spam_result = spam_filter.check(text)
@@ -1010,11 +1048,13 @@ async def on_message(message: types.Message):
         rm = message.reply_to_message
         # Kanal postiga komment yoki oddiy reply
         reply_text = rm.text or rm.caption or ""
+        if not reply_text and rm.poll:
+            reply_text = _format_poll_as_text(rm.poll)
         reply_user = rm.from_user.first_name if rm.from_user else "Kanal"
         if rm.sender_chat:  # Kanal post
             reply_user = rm.sender_chat.title or "Kanal"
         if reply_text:
-            reply_context = f"\n[Reply: {reply_user}: {reply_text[:500]}]"
+            reply_context = f"\n[Reply: {reply_user}: {reply_text[:800]}]"
 
     # DB ga saqlash
     ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
