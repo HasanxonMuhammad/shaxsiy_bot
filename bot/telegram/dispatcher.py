@@ -970,17 +970,18 @@ async def on_message(message: types.Message):
                 (mentioned or name_referenced or replied_to_me or is_owner_msg or is_aziza_msg or is_question)
                 and not in_two_user_convo
             )
+            log.info(
+                "Arab guruh xabar (%s): mention=%s reply_me=%s name=%s aziza=%s owner=%s "
+                "question=%s 2user_convo=%s → %s | text=%r",
+                username or first_name, mentioned, replied_to_me, name_referenced,
+                is_aziza_msg, is_owner_msg, is_question, in_two_user_convo,
+                "AI" if should_respond else "SKIP", (text or "")[:80],
+            )
             if not should_respond:
                 ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
                 await db.save_message(
                     chat_id, message.message_id, user_id,
                     username, first_name, text, None, ts,
-                )
-                log.debug(
-                    "Arab guruh skip: mention=%s reply=%s aziza=%s owner=%s "
-                    "question=%s two_user_convo=%s",
-                    mentioned, replied_to_me, is_aziza_msg, is_owner_msg,
-                    is_question, in_two_user_convo,
                 )
                 return
 
