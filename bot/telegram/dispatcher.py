@@ -892,7 +892,7 @@ async def on_message(message: types.Message):
         # Mention-only guruhlar — bot faqat @mention, ism aytilganda yoki
         # uning xabariga reply qilinganda javob beradi. Boshqa xabarlarni
         # kontekst uchun saqlab qo'yamiz, lekin AI ga uzatmaymiz.
-        MENTION_ONLY_GROUPS = {-1003280067467}
+        MENTION_ONLY_GROUPS: set[int] = set()  # -1003280067467 → Arab guruh, pastda alohida logika
         if chat_id in MENTION_ONLY_GROUPS:
             bot_username = (bot_me.username or "").lower()
             bot_name_low = Config.BOT_NAME.lower()
@@ -920,7 +920,7 @@ async def on_message(message: types.Message):
         # — Savol patterni bor (?, ؟, "qanday", "ما", va h.k.) → AI
         # — Ikki user reply-zanjirida gaplashayotgan bo'lsa → JIM
         # — Aks holda kontekst uchun saqla, AI ga uzatma
-        ARAB_LEARNER_GROUP = {-1003520828779}
+        ARAB_LEARNER_GROUP = {-1003280067467}
         if chat_id in ARAB_LEARNER_GROUP:
             bot_username = (bot_me.username or "").lower()
             bot_name_low = Config.BOT_NAME.lower()
