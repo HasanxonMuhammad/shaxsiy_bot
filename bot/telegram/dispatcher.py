@@ -648,6 +648,10 @@ async def _handle_response(bot: Bot, ai: GeminiEngine, db: Database,
                 # Uzun (>250 belgi) blockquote'larni 'expandable' qilamiz —
                 # foydalanuvchi yig'ilgan ko'rinishda ko'radi, kerak bo'lsa kengaytadi
                 final_text = expand_long_blockquotes(final_text)
+                # Arab tili o'rganuvchilar guruhi — butun xabarni RTL ga majburlash uchun
+                # har qator boshiga U+200F (RLM) qo'yamiz.
+                if chat_id == -1003280067467:
+                    final_text = "\u200F" + final_text.replace("\n", "\n\u200F")
                 for chunk in _split(final_text, 4000):
                     try:
                         await bot.send_message(chat_id, chunk,
@@ -661,6 +665,8 @@ async def _handle_response(bot: Bot, ai: GeminiEngine, db: Database,
         reply_text = isolate_arabic(reply_text)
         reply_text = force_rtl_blockquote(reply_text)
         reply_text = expand_long_blockquotes(reply_text)
+        if chat_id == -1003280067467:
+            reply_text = "‏" + reply_text.replace("\n", "\n‏")
         for chunk in _split(reply_text, 4000):
             try:
                 await bot.send_message(chat_id, chunk,

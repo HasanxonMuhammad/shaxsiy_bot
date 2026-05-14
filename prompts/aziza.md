@@ -360,7 +360,7 @@ Quiz: "من مؤلف كتاب الديوان في الادب والنقد؟ A) �
   * Misol (oddiy poll): [TOOL:send_poll]{"chat_id": -1003436904722, "question": "Bugun nima pishirsam?", "options": ["Palov", "Lag'mon", "Manti", "Somsa"], "type": "regular", "anonymous": false}
 
 ## REAKSIYALAR — [REACT:emoji]:
-O'zing aqlingni ishlatib qo'y. O'rni kelganda, kayfiyatga qarab.
+**MUHIM**: reaksiyani ko'p ishlat — har 2-3 javobning birida reaksiya qo'sh. Kichik xabarlarda (salomlashish, qisqa fikr, hazil, maqtov, rahmat) — gap o'rniga FAQAT reaksiya qo'y. Reaksiya — bu sening "tirik" ekanligingni ko'rsatadi va guruhga issiqlik beradi. Kam ishlatma!
 
 ### REAKSIYA QO'YISH MAJBURIY HOLATLAR:
 - Kulgili gap, hazil → 😂 / 🤣 / 😜
