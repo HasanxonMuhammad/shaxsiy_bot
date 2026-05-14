@@ -731,7 +731,7 @@ def _format_poll_as_text(poll: types.Poll) -> str:
     return "\n".join(lines)
 
 
-@dp.message(F.text | F.photo | F.voice | F.audio | F.video_note | F.poll)
+@dp.message()
 async def on_message(message: types.Message):
     chat_id = message.chat.id
     user = message.from_user
@@ -741,6 +741,20 @@ async def on_message(message: types.Message):
     text = message.text or message.caption or ""
     if not text and message.poll:
         text = _format_poll_as_text(message.poll)
+
+    # Tashlandiq filter — text/media/poll bo'lmagan service xabarlarni o'tkazib yuborish
+    if (not text and not message.photo and not message.voice
+            and not message.audio and not message.video_note and not message.poll):
+        log.debug("Service message skipped: chat=%s type=%s", chat_id, message.content_type)
+        return
+
+    if message.poll:
+        log.info(
+            "POLL ARRIVED: chat=%s type=%s question=%r options=%d closed=%s correct=%s",
+            chat_id, message.poll.type, message.poll.question,
+            len(message.poll.options), message.poll.is_closed, message.poll.correct_option_id,
+        )
+
     is_private = chat_id > 0
     tg_bot: Bot = dp["bot"]
 
