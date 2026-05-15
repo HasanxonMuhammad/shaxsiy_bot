@@ -1006,6 +1006,15 @@ async def on_message(message: types.Message):
             )
             is_question = QUESTION_RE.search(text or "") is not None
 
+            # Arabcha "ey olima/ustoza" naqsh — to'g'ridan-to'g'ri murojaat
+            ARABIC_ADDRESS_RE = re.compile(
+                r"(يا\s*عالمة|أيتها\s*العالمة|يا\s*أستاذة|يا\s*معلمة|"
+                r"يا\s*عَالِمَة|أيتها\s*المعلمة|يا\s*أم)",
+            )
+            arabic_addressed = ARABIC_ADDRESS_RE.search(text or "") is not None
+            if arabic_addressed:
+                name_referenced = True
+
             should_respond = (
                 (mentioned or name_referenced or replied_to_me or is_owner_msg or is_aziza_msg or is_question)
                 and not in_two_user_convo
