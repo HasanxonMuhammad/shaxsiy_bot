@@ -687,37 +687,79 @@ def _split(text: str, n: int) -> list[str]:
     return chunks
 
 
-_HTML_TAG_RE = re.compile(r"<[^>]+>")
+# Telegram HTML rejimida ruxsat etilgan teglar (regex'da tekshiriladigan nomlar)
+_TELEGRAM_ALLOWED_TAGS = {
+    "b", "strong", "i", "em", "u", "ins", "s", "strike", "del",
+    "code", "pre", "a", "blockquote", "tg-spoiler", "tg-emoji", "span",
+    "br",
+}
+_HTML_TAG_RE = re.compile(r"<(/?)([a-zA-Z][a-zA-Z0-9\-]*)\b[^<>]*>")
 
 
-def _strip_html_tags(text: str) -> str:
-    """HTML teglarni olib tashlab, faqat oddiy matnni qaytaradi.
+def _sanitize_html(text: str) -> str:
+    """Telegram tomonidan qo'llab-quvvatlanmaydigan teg'larni escape qilish.
 
-    Telegram parse_mode=HTML rejimi xato bersa fallback'da chaqiriladi —
-    aks holda <blockquote> kabi teglar literal chiqadi.
+    Format saqlanadi (<b>, <i>, <blockquote> va h.k.) — lekin `<h3>`, `<p>`,
+    `<div>`, `<table>` kabi taqiqlangan teglar `&lt;tag&gt;` ga aylantiriladi.
+    Bu bilan parse_mode=HTML xato bermay, valid format saqlanadi.
     """
     if not text:
         return text
-    text = _HTML_TAG_RE.sub("", text)
-    # HTML entity'larni ham tiklash
+
+    def _replace(m):
+        tag = m.group(2).lower()
+        if tag in _TELEGRAM_ALLOWED_TAGS:
+            return m.group(0)  # asl tegni saqla
+        # taqiqlangan teg — escape
+        return m.group(0).replace("<", "&lt;").replace(">", "&gt;")
+
+    return _HTML_TAG_RE.sub(_replace, text)
+
+
+_HTML_STRIP_RE = re.compile(r"<[^>]+>")
+
+
+def _strip_html_tags(text: str) -> str:
+    """Oxirgi chora — barcha HTML teglarni olib tashlab plain text qaytaradi."""
+    if not text:
+        return text
+    text = _HTML_STRIP_RE.sub("", text)
     return (text.replace("&lt;", "<").replace("&gt;", ">")
                 .replace("&amp;", "&").replace("&quot;", '"').replace("&#39;", "'"))
 
 
 async def _safe_send(bot: Bot, chat_id: int, text: str,
                      reply_to: int | None = None) -> None:
-    """HTML bilan yuborishga harakat qiladi, xato bo'lsa teglarni olib tashlab qayta yuboradi."""
+    """HTML bilan yuborishga urinish — fail bo'lsa: 1) sanitatsiya, 2) plain text.
+
+    Format imkon qadar saqlanadi. Faqat sanitatsiyadan keyin ham xato bo'lsa
+    teglar olib tashlanadi va loglarga yoziladi.
+    """
     try:
         await bot.send_message(chat_id, text,
                                reply_to_message_id=reply_to,
                                parse_mode="HTML")
+        return
     except Exception as e:
-        log.warning("HTML parse xato (%s) — teglarni stripping, plain text yuborish", e)
-        plain = _strip_html_tags(text)
+        log.warning("HTML parse xato (%s) — sanitatsiya qilib qayta urinish", e)
+
+    # 1-urinish: faqat noma'lum teglarni escape qilib qaytadan yuborish
+    sanitized = _sanitize_html(text)
+    if sanitized != text:
         try:
-            await bot.send_message(chat_id, plain, reply_to_message_id=reply_to)
-        except Exception:
-            await bot.send_message(chat_id, plain)
+            await bot.send_message(chat_id, sanitized,
+                                   reply_to_message_id=reply_to,
+                                   parse_mode="HTML")
+            return
+        except Exception as e:
+            log.warning("HTML hatto sanitatsiyadan keyin xato (%s) — plain text", e)
+
+    # Oxirgi chora — plain text
+    plain = _strip_html_tags(text)
+    try:
+        await bot.send_message(chat_id, plain, reply_to_message_id=reply_to)
+    except Exception:
+        await bot.send_message(chat_id, plain)
 
 
 # ── Media yuklab olish ─────────────────────────────────────────
