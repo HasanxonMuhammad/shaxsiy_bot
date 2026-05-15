@@ -11,7 +11,7 @@ from bot.db import Database
 from bot.ai import GeminiEngine
 from bot.memory import MemoryStore
 from bot.tools import ToolHandler
-from bot.tools.handler import strip_tool_blocks, isolate_arabic, force_rtl_blockquote, expand_long_blockquotes
+from bot.tools.handler import strip_tool_blocks, isolate_arabic, force_rtl_blockquote, expand_long_blockquotes, markdown_to_html
 from bot.telegram.spam import SpamFilter
 
 log = logging.getLogger(__name__)
@@ -641,6 +641,8 @@ async def _handle_response(bot: Bot, ai: GeminiEngine, db: Database,
             if final_text and "[NO_ACTION]" not in final_text:
                 final_text = strip_tool_blocks(final_text)
                 final_text = re.sub(r"\[REACT:[^\]]+\]", "", final_text).strip()
+                # Markdown qoldiqlarini HTML'ga aylantirish (**bold** → <b>bold</b>)
+                final_text = markdown_to_html(final_text)
                 # Bidi izolyatsiya: aralash arabcha+lotin matn Telegram'da to'g'ri ko'rinadi
                 final_text = isolate_arabic(final_text)
                 # Blockquote ichida arabcha bo'lsa boshiga RLM qo'shamiz — RTL base direction
@@ -662,6 +664,7 @@ async def _handle_response(bot: Bot, ai: GeminiEngine, db: Database,
                                                reply_to_message_id=messages[-1]["message_id"])
     elif reply_text:
         last_msg_id = messages[-1]["message_id"]
+        reply_text = markdown_to_html(reply_text)
         reply_text = isolate_arabic(reply_text)
         reply_text = force_rtl_blockquote(reply_text)
         reply_text = expand_long_blockquotes(reply_text)

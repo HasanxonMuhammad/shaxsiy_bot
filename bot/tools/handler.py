@@ -64,6 +64,29 @@ _BLOCKQUOTE_RE = re.compile(
 _EXPANDABLE_BLOCKQUOTE_THRESHOLD = 250
 
 
+_MARKDOWN_BOLD_RE = re.compile(r"\*\*([^\n*][^*]*?[^\n*]|[^\n*])\*\*")
+_MARKDOWN_BOLD_UNDERSCORE_RE = re.compile(r"__([^\n_][^_]*?[^\n_]|[^\n_])__")
+_MARKDOWN_CODE_RE = re.compile(r"`([^`\n]+)`")
+
+
+def markdown_to_html(text: str) -> str:
+    """Gemini ba'zan `**bold**` markdown'ga qaytadi — HTML'ga aylantiramiz.
+
+    Telegram parse_mode=HTML rejimida `**` literal asteriks bo'lib qoladi. Bu
+    funksiya AI javobidagi tipik markdown qoldiqlarini HTML teglarga aylantirib,
+    o'qib bo'lmas asteriks chiqishini oldini oladi.
+    """
+    if not text:
+        return text
+    try:
+        text = _MARKDOWN_BOLD_RE.sub(r"<b>\1</b>", text)
+        text = _MARKDOWN_BOLD_UNDERSCORE_RE.sub(r"<b>\1</b>", text)
+        text = _MARKDOWN_CODE_RE.sub(r"<code>\1</code>", text)
+    except Exception as e:
+        log.warning("markdown_to_html xatosi (%s) — asl matn", e)
+    return text
+
+
 def force_rtl_blockquote(html: str) -> str:
     """Blockquote ichida arabcha bo'lsa boshiga U+200F (RLM) qo'shadi.
 
@@ -357,6 +380,8 @@ class ToolHandler:
                 return await self._query(params)
             case "send_poll":
                 return await self._send_poll(params)
+            case "start_test":
+                return await self._start_test(params)
             case "send_location":
                 return await self._send_location(params)
             case "ban_user":
