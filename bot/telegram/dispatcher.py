@@ -655,13 +655,8 @@ async def _handle_response(bot: Bot, ai: GeminiEngine, db: Database,
                 if chat_id == -1003280067467:
                     final_text = "\u200F" + final_text.replace("\n", "\n\u200F")
                 for chunk in _split(final_text, 4000):
-                    try:
-                        await bot.send_message(chat_id, chunk,
-                                               reply_to_message_id=messages[-1]["message_id"],
-                                               parse_mode="HTML")
-                    except Exception:
-                        await bot.send_message(chat_id, chunk,
-                                               reply_to_message_id=messages[-1]["message_id"])
+                    await _safe_send(bot, chat_id, chunk,
+                                     reply_to=messages[-1]["message_id"])
     elif reply_text:
         last_msg_id = messages[-1]["message_id"]
         reply_text = markdown_to_html(reply_text)
@@ -671,16 +666,7 @@ async def _handle_response(bot: Bot, ai: GeminiEngine, db: Database,
         if chat_id == -1003280067467:
             reply_text = "‏" + reply_text.replace("\n", "\n‏")
         for chunk in _split(reply_text, 4000):
-            try:
-                await bot.send_message(chat_id, chunk,
-                                       reply_to_message_id=last_msg_id,
-                                       parse_mode="HTML")
-            except Exception:
-                try:
-                    await bot.send_message(chat_id, chunk,
-                                           reply_to_message_id=last_msg_id)
-                except Exception:
-                    await bot.send_message(chat_id, chunk)
+            await _safe_send(bot, chat_id, chunk, reply_to=last_msg_id)
 
 
 def _split(text: str, n: int) -> list[str]:
@@ -699,6 +685,39 @@ def _split(text: str, n: int) -> list[str]:
         chunks.append(text[:cut])
         text = text[cut:].lstrip()
     return chunks
+
+
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _strip_html_tags(text: str) -> str:
+    """HTML teglarni olib tashlab, faqat oddiy matnni qaytaradi.
+
+    Telegram parse_mode=HTML rejimi xato bersa fallback'da chaqiriladi —
+    aks holda <blockquote> kabi teglar literal chiqadi.
+    """
+    if not text:
+        return text
+    text = _HTML_TAG_RE.sub("", text)
+    # HTML entity'larni ham tiklash
+    return (text.replace("&lt;", "<").replace("&gt;", ">")
+                .replace("&amp;", "&").replace("&quot;", '"').replace("&#39;", "'"))
+
+
+async def _safe_send(bot: Bot, chat_id: int, text: str,
+                     reply_to: int | None = None) -> None:
+    """HTML bilan yuborishga harakat qiladi, xato bo'lsa teglarni olib tashlab qayta yuboradi."""
+    try:
+        await bot.send_message(chat_id, text,
+                               reply_to_message_id=reply_to,
+                               parse_mode="HTML")
+    except Exception as e:
+        log.warning("HTML parse xato (%s) — teglarni stripping, plain text yuborish", e)
+        plain = _strip_html_tags(text)
+        try:
+            await bot.send_message(chat_id, plain, reply_to_message_id=reply_to)
+        except Exception:
+            await bot.send_message(chat_id, plain)
 
 
 # ── Media yuklab olish ─────────────────────────────────────────
