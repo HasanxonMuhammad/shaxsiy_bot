@@ -1049,13 +1049,15 @@ async def on_message(message: types.Message):
                 )
                 return
 
-        # Arab tili o'rganuvchilar guruhi (200+ a'zo, faol):
+        # Smart-filter guruhlar (faol, ko'p a'zoli):
         # — Mention/reply/ism aytilsa → AI
         # — Owner yoki Aziza yozsa → AI
         # — Savol patterni bor (?, ؟, "qanday", "ما", va h.k.) → AI
         # — Ikki user reply-zanjirida gaplashayotgan bo'lsa → JIM
         # — Aks holda kontekst uchun saqla, AI ga uzatma
-        ARAB_LEARNER_GROUP = {-1003280067467}
+        # -1003280067467 → Olima (arab tili o'rganuvchilar)
+        # -1003831509848 → Mudarris (arab ana tili guruhi)
+        ARAB_LEARNER_GROUP = {-1003280067467, -1003831509848}
         if chat_id in ARAB_LEARNER_GROUP:
             bot_username = (bot_me.username or "").lower()
             bot_name_low = Config.BOT_NAME.lower()
@@ -1101,11 +1103,19 @@ async def on_message(message: types.Message):
             )
             is_question = QUESTION_RE.search(text or "") is not None
 
-            # Arabcha "ey olima/ustoza" naqsh — to'g'ridan-to'g'ri murojaat
-            ARABIC_ADDRESS_RE = re.compile(
-                r"(يا\s*عالمة|أيتها\s*العالمة|يا\s*أستاذة|يا\s*معلمة|"
-                r"يا\s*عَالِمَة|أيتها\s*المعلمة|يا\s*أم)",
-            )
+            # Arabcha to'g'ridan-to'g'ri murojaat naqshlari (botga qarab)
+            if chat_id == -1003280067467:
+                # Olima — ayol shaklidagi murojaatlar
+                ARABIC_ADDRESS_RE = re.compile(
+                    r"(يا\s*عالمة|أيتها\s*العالمة|يا\s*أستاذة|يا\s*معلمة|"
+                    r"يا\s*عَالِمَة|أيتها\s*المعلمة|يا\s*أم)",
+                )
+            else:
+                # Mudarris (-1003831509848) — erkak shaklidagi murojaatlar
+                ARABIC_ADDRESS_RE = re.compile(
+                    r"(يا\s*أستاذ|يا\s*شيخ|يا\s*مدرس|يا\s*معلم|"
+                    r"يا\s*أخ|أيها\s*الأستاذ|أيها\s*الشيخ|أيها\s*المعلم)",
+                )
             arabic_addressed = ARABIC_ADDRESS_RE.search(text or "") is not None
             if arabic_addressed:
                 name_referenced = True
