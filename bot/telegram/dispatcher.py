@@ -650,9 +650,16 @@ async def _handle_response(bot: Bot, ai: GeminiEngine, db: Database,
                 # Uzun (>250 belgi) blockquote'larni 'expandable' qilamiz —
                 # foydalanuvchi yig'ilgan ko'rinishda ko'radi, kerak bo'lsa kengaytadi
                 final_text = expand_long_blockquotes(final_text)
-                # Arab tili o'rganuvchilar guruhi — butun xabarni RTL ga majburlash uchun
-                # har qator boshiga U+200F (RLM) qo'yamiz.
-                if chat_id == -1003280067467:
+                # RTL majburlash:
+                # 1) Arab tili o'rganuvchilar guruhi — har doim RTL
+                # 2) Mudarris guruhda sof arabcha xabar yozsa — RTL.
+                #    Aralash (o'zbek+arab) bo'lsa — odatdagi qoida.
+                _is_mudarris = "mudarris" in Config.BOT_NAME.lower()
+                _force_rtl = (
+                    chat_id == -1003280067467
+                    or (_is_mudarris and chat_id < 0 and _is_mostly_arabic(final_text))
+                )
+                if _force_rtl:
                     final_text = "\u200F" + final_text.replace("\n", "\n\u200F")
                 for chunk in _split(final_text, 4000):
                     await _safe_send(bot, chat_id, chunk,
@@ -663,7 +670,12 @@ async def _handle_response(bot: Bot, ai: GeminiEngine, db: Database,
         reply_text = isolate_arabic(reply_text)
         reply_text = force_rtl_blockquote(reply_text)
         reply_text = expand_long_blockquotes(reply_text)
-        if chat_id == -1003280067467:
+        _is_mudarris = "mudarris" in Config.BOT_NAME.lower()
+        _force_rtl_reply = (
+            chat_id == -1003280067467
+            or (_is_mudarris and chat_id < 0 and _is_mostly_arabic(reply_text))
+        )
+        if _force_rtl_reply:
             reply_text = "‏" + reply_text.replace("\n", "\n‏")
         for chunk in _split(reply_text, 4000):
             await _safe_send(bot, chat_id, chunk, reply_to=last_msg_id)
@@ -717,6 +729,28 @@ def _sanitize_html(text: str) -> str:
 
 
 _HTML_STRIP_RE = re.compile(r"<[^>]+>")
+# Sof arabcha tekshiruvi uchun: arabcha harflar oralig'i (Olima'da bor isolate_arabic ga o'xshash)
+_ARABIC_LETTER_RE = re.compile(r"[؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]")
+_LATIN_CYR_LETTER_RE = re.compile(r"[A-Za-zЀ-ӿԀ-ԯ]")
+
+
+def _is_mostly_arabic(text: str, threshold: float = 0.8) -> bool:
+    """Matn asosan arabcha bo'lsa True qaytaradi (rtl majburlash uchun).
+
+    HTML teglar, emoji, raqamlar va tinish belgilarini hisoblamaymiz —
+    faqat alfavit harflarini. Agar arabcha harflar ulushi threshold dan oshsa
+    matnni RTL ga majburlaymiz.
+    """
+    if not text:
+        return False
+    # HTML teglarni olib tashlaymiz
+    plain = _HTML_STRIP_RE.sub("", text)
+    arabic_count = len(_ARABIC_LETTER_RE.findall(plain))
+    latin_count = len(_LATIN_CYR_LETTER_RE.findall(plain))
+    total = arabic_count + latin_count
+    if total < 5:  # juda qisqa matn — qoidaga moslashtirmaymiz
+        return False
+    return (arabic_count / total) >= threshold
 
 
 def _strip_html_tags(text: str) -> str:
