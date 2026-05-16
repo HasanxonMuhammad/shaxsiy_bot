@@ -848,7 +848,8 @@ async def on_message(message: types.Message):
 
     # Tashlandiq filter — text/media/poll bo'lmagan service xabarlarni o'tkazib yuborish
     if (not text and not message.photo and not message.voice
-            and not message.audio and not message.video_note and not message.poll):
+            and not message.audio and not message.video_note and not message.video
+            and not message.animation and not message.document and not message.poll):
         log.debug("Service message skipped: chat=%s type=%s", chat_id, message.content_type)
         return
 
@@ -902,6 +903,50 @@ async def on_message(message: types.Message):
                 text = "[Video xabar yuborildi]"
         except Exception as e:
             log.error("Video yuklab olishda xato: %s", e)
+
+    # To'liq video fayl (uploaded MP4 yoki o'xshash). Gemini inline base64 chegarasi
+    # ~20MB. Kattaroq fayllarni ham urinib ko'ramiz — Gemini File API bo'lsa AI engine
+    # o'zi switch qiladi. Aks holda warning.
+    if message.video:
+        try:
+            v = message.video
+            size_mb = (v.file_size or 0) / (1024 * 1024) if v.file_size else 0
+            if size_mb and size_mb > 20:
+                log.warning("Video katta (%.1fMB) — inline yuklash uchun limit ~20MB; baribir urinaman", size_mb)
+            data = await download_file(tg_bot, v.file_id)
+            mime = v.mime_type or "video/mp4"
+            media_list.append({"data": data, "mime": mime})
+            if not text:
+                text = "[Video yuborildi]"
+        except Exception as e:
+            log.error("Video yuklab olishda xato: %s", e)
+
+    # Animatsiya (GIF) — Gemini ham ko'ra oladi
+    if message.animation:
+        try:
+            data = await download_file(tg_bot, message.animation.file_id)
+            mime = message.animation.mime_type or "video/mp4"
+            media_list.append({"data": data, "mime": mime})
+            if not text:
+                text = "[GIF yuborildi]"
+        except Exception as e:
+            log.error("Animatsiya yuklab olishda xato: %s", e)
+
+    # Document sifatida yuborilgan video/audio
+    if message.document:
+        d = message.document
+        mime = d.mime_type or ""
+        if mime.startswith(("video/", "audio/", "image/")):
+            try:
+                size_mb = (d.file_size or 0) / (1024 * 1024) if d.file_size else 0
+                if size_mb > 20:
+                    log.warning("Document media katta (%.1fMB) — urinaman", size_mb)
+                data = await download_file(tg_bot, d.file_id)
+                media_list.append({"data": data, "mime": mime})
+                if not text:
+                    text = f"[{mime} fayl yuborildi]"
+            except Exception as e:
+                log.error("Document media yuklab olishda xato: %s", e)
 
     # ── SHAXSIY CHAT: faqat owner javob oladi ────────────────
     if is_private and not Config.is_vip(user_id):
