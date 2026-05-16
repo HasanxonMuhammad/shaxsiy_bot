@@ -587,8 +587,31 @@ async def _handle_response(bot: Bot, ai: GeminiEngine, db: Database,
                 parts = result.split(":", 2)
                 img_bytes = b64.b64decode(parts[2])
                 photo = BufferedInputFile(img_bytes, filename="image.png")
-                await bot.send_photo(chat_id, photo, reply_to_message_id=last_msg_id,
-                                     caption=reply_text[:1024] if reply_text else None)
+                # Telegram caption limiti 1024 belgi. Matn uzunroq bo'lsa:
+                # 1) Rasmni qisqa caption bilan jo'natamiz (yoki captionsiz)
+                # 2) To'liq matnni alohida xabar qilib jo'natamiz
+                CAPTION_LIMIT = 1024
+                clean_reply = reply_text or ""
+                if not clean_reply:
+                    await bot.send_photo(chat_id, photo,
+                                         reply_to_message_id=last_msg_id)
+                elif len(clean_reply) <= CAPTION_LIMIT:
+                    await bot.send_photo(chat_id, photo,
+                                         reply_to_message_id=last_msg_id,
+                                         caption=clean_reply,
+                                         parse_mode="HTML")
+                else:
+                    # Rasm + to'liq matn — alohida xabar
+                    photo_msg = await bot.send_photo(chat_id, photo,
+                                                     reply_to_message_id=last_msg_id)
+                    # Matnni rasm xabariga reply qilib jo'natamiz
+                    full_text = markdown_to_html(clean_reply)
+                    full_text = isolate_arabic(full_text)
+                    full_text = force_rtl_blockquote(full_text)
+                    full_text = expand_long_blockquotes(full_text)
+                    for chunk in _split(full_text, 4000):
+                        await _safe_send(bot, chat_id, chunk,
+                                         reply_to=photo_msg.message_id)
             except Exception as e:
                 log.error("Rasm yuborishda xato: %s", e)
                 await bot.send_message(chat_id, "Rasm yaratdim lekin yuborishda xato chiqdi 😅",
