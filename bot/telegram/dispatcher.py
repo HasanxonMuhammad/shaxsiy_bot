@@ -877,14 +877,17 @@ async def on_message(message: types.Message):
         return
 
     # ── Olima pause/resume kodi (faqat Arab tili o'rganuvchilar guruhida) ──
-    # Owner yoki Aziza maxsus kodlarni yozsa, Olima u guruhda butunlay jim turadi
-    # yoki qaytadan ishlay boshlaydi. Boshqa guruhlar va DM tegmaydi.
+    # Hasanxon (6350373395) yoki Aziza (5792080114) maxsus kodlarni yozsa,
+    # Olima u guruhda butunlay jim turadi yoki qaytadan ishlay boshlaydi.
+    # Boshqa guruhlar va DM tegmaydi.
+    # Eslatma: Olima'da OWNER_ID=Aziza, VIP_IDS=Hasanxon — shu sababli is_vip ishlatamiz.
     PAUSE_GROUP = -1003280067467
     PAUSE_CODE = "20010212"
     RESUME_CODE = "12022001"
+    PAUSE_AUTHORIZED = {6350373395, 5792080114}  # Hasanxon, Aziza
     if (chat_id == PAUSE_GROUP
             and "olima" in Config.BOT_NAME.lower()
-            and (Config.is_owner(user_id) or user_id == 5792080114)):
+            and user_id in PAUSE_AUTHORIZED):
         stripped = text.strip()
         if stripped == PAUSE_CODE:
             await db.mute_chat(chat_id, reason="manual pause")
