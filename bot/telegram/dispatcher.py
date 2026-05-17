@@ -876,6 +876,39 @@ async def on_message(message: types.Message):
         log.debug("Service message skipped: chat=%s type=%s", chat_id, message.content_type)
         return
 
+    # ── Olima pause/resume kodi (faqat Arab tili o'rganuvchilar guruhida) ──
+    # Owner yoki Aziza maxsus kodlarni yozsa, Olima u guruhda butunlay jim turadi
+    # yoki qaytadan ishlay boshlaydi. Boshqa guruhlar va DM tegmaydi.
+    PAUSE_GROUP = -1003280067467
+    PAUSE_CODE = "20010212"
+    RESUME_CODE = "12022001"
+    if (chat_id == PAUSE_GROUP
+            and "olima" in Config.BOT_NAME.lower()
+            and (Config.is_owner(user_id) or user_id == 5792080114)):
+        stripped = text.strip()
+        if stripped == PAUSE_CODE:
+            await db.mute_chat(chat_id, reason="manual pause")
+            log.info("Olima Arab guruhda JIM (pause kodi)")
+            try:
+                await message.reply("🤫")
+            except Exception:
+                pass
+            return
+        if stripped == RESUME_CODE:
+            await db.unmute_chat(chat_id)
+            log.info("Olima Arab guruhda QAYTA ISHLAYDI (resume kodi)")
+            try:
+                await message.reply("🌸")
+            except Exception:
+                pass
+            return
+
+    # Agar Arab guruh muted bo'lsa — darrov chiqamiz (token, bandwidth tejaymiz).
+    if (chat_id == PAUSE_GROUP
+            and "olima" in Config.BOT_NAME.lower()
+            and await db.is_muted(chat_id)):
+        return
+
     if message.poll:
         log.info(
             "POLL ARRIVED: chat=%s type=%s question=%r options=%d closed=%s correct=%s",
