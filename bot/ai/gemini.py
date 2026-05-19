@@ -402,7 +402,18 @@ class GeminiEngine:
                     text = "\n".join(parts)
                     if text:
                         self.stats.record(duration_ms, True, len(text))
-                        log.info("Gemini javob: %d belgi, %.0fms", len(text), duration_ms)
+                        usage = data.get("usageMetadata", {}) or {}
+                        prompt_t = usage.get("promptTokenCount", 0)
+                        out_t = usage.get("candidatesTokenCount", 0)
+                        cached_t = usage.get("cachedContentTokenCount", 0)
+                        total_t = usage.get("totalTokenCount", 0)
+                        non_cached_in = max(prompt_t - cached_t, 0)
+                        log.info(
+                            "Gemini javob: %d belgi, %.0fms | TOKENS in=%d (cached=%d, fresh=%d) out=%d total=%d cache_used=%s",
+                            len(text), duration_ms,
+                            prompt_t, cached_t, non_cached_in, out_t, total_t,
+                            bool(cache_id),
+                        )
                         return text
                     # Bo'sh javob — google_search olib retry
                     finish_reason = candidate.get("finishReason", "UNKNOWN")
