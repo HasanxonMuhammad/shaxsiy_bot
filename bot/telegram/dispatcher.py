@@ -1036,9 +1036,24 @@ async def on_message(message: types.Message):
                 total_msgs = (await cursor.fetchone())[0]
             except Exception:
                 total_msgs = "?"
-            # Narx taxminiy (gemini-3.1-pro: ~$1.25/M input, ~$5/M output)
-            tokens = s.total_tokens_approx
-            cost_approx = tokens * 0.000003  # o'rtacha $3/M token
+            # Aniq token + cost — usageMetadata dan
+            in_t = s.input_tokens
+            cached_t = s.cached_tokens
+            fresh_t = s.fresh_input_tokens
+            out_t = s.output_tokens
+            cost = s.estimated_cost
+            hit_rate = (cached_t / in_t * 100) if in_t else 0
+
+            # Kunlik breakdown (oxirgi 5 kun)
+            daily_lines = []
+            for day in sorted(s.daily.keys(), reverse=True)[:5]:
+                d = s.daily[day]
+                d_hit = (d["cached"] / d["in"] * 100) if d["in"] else 0
+                daily_lines.append(
+                    f"  {day}: {d['req']} req, ${d['cost']:.2f}, cache {d_hit:.0f}%"
+                )
+            daily_block = "\n".join(daily_lines) if daily_lines else "  (hali ma'lumot yo'q)"
+
             await message.reply(
                 f"<b>📊 {Config.BOT_NAME} — Status</b>\n\n"
                 f"<b>🤖 Model:</b> <code>{model}</code>\n"
@@ -1048,9 +1063,14 @@ async def on_message(message: types.Message):
                 f"  ❌ Xato: {s.errors}\n"
                 f"  ⏳ Rate limit: {s.rate_limited}\n"
                 f"  📊 Jami: {s.total_requests}\n\n"
-                f"<b>⚡ Tezlik:</b> o'rtacha {s.avg_response_ms:.0f}ms\n"
-                f"<b>📝 Tokenlar:</b> ~{tokens:,}\n"
-                f"<b>💰 Taxminiy sarfj:</b> ~${cost_approx:.2f}\n\n"
+                f"<b>⚡ Tezlik:</b> o'rtacha {s.avg_response_ms:.0f}ms\n\n"
+                f"<b>🎟 Tokenlar (boshlanishidan beri):</b>\n"
+                f"  📥 Input: {in_t:,}\n"
+                f"  💾 Cached: {cached_t:,} ({hit_rate:.0f}% hit)\n"
+                f"  🆕 Fresh: {fresh_t:,}\n"
+                f"  📤 Output: {out_t:,}\n"
+                f"<b>💰 Sarf (taxminiy):</b> ~${cost:.3f}\n\n"
+                f"<b>📅 Kunlik (oxirgi 5):</b>\n{daily_block}\n\n"
                 f"<b>👥 O'quvchilar:</b> {len(students)}\n"
                 f"<b>💬 Jami xabarlar:</b> {total_msgs}\n\n"
                 f"<b>🗄 Bazalar:</b>\n"

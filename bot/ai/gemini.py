@@ -67,7 +67,7 @@ def _classify_error(error_str: str) -> str:
 
 @dataclass
 class EngineStats:
-    """So'rov statistikasi."""
+    """So'rov statistikasi (umumiy + aniq token + xarajat)."""
     total_requests: int = 0
     successful: int = 0
     rate_limited: int = 0
@@ -76,6 +76,16 @@ class EngineStats:
     last_request_time: float = 0
     avg_response_ms: float = 0
     _response_times: list = field(default_factory=list)
+
+    # Aniq token statistika (usageMetadata dan)
+    input_tokens: int = 0
+    cached_tokens: int = 0
+    fresh_input_tokens: int = 0
+    output_tokens: int = 0
+    estimated_cost: float = 0.0
+
+    # Kunlik breakdown — kun → {in, cached, fresh, out, cost, req}
+    daily: dict = field(default_factory=dict)
 
     def record(self, duration_ms: float, success: bool, tokens: int = 0):
         self.total_requests += 1
@@ -87,6 +97,40 @@ class EngineStats:
             self._response_times = self._response_times[-50:]
         self.avg_response_ms = sum(self._response_times) / len(self._response_times)
         self.last_request_time = time.time()
+
+    def record_tokens(self, prompt_t: int, cached_t: int, out_t: int) -> None:
+        """Aniq token sarfini va xarajatni kunlik breakdown bilan saqlash.
+
+        Gemini Pro narxi: fresh in $1.25/M, cached in $0.31/M, output $5.00/M.
+        """
+        fresh = max(prompt_t - cached_t, 0)
+        cost = (
+            fresh * 1.25 / 1_000_000
+            + cached_t * 0.31 / 1_000_000
+            + out_t * 5.00 / 1_000_000
+        )
+        self.input_tokens += prompt_t
+        self.cached_tokens += cached_t
+        self.fresh_input_tokens += fresh
+        self.output_tokens += out_t
+        self.estimated_cost += cost
+
+        # Kunlik
+        day = time.strftime("%Y-%m-%d", time.gmtime())
+        d = self.daily.setdefault(day, {
+            "req": 0, "in": 0, "cached": 0, "fresh": 0, "out": 0, "cost": 0.0,
+        })
+        d["req"] += 1
+        d["in"] += prompt_t
+        d["cached"] += cached_t
+        d["fresh"] += fresh
+        d["out"] += out_t
+        d["cost"] += cost
+
+        # Faqat oxirgi 14 kun
+        if len(self.daily) > 14:
+            oldest = sorted(self.daily.keys())[0]
+            self.daily.pop(oldest, None)
 
 
 
@@ -408,6 +452,8 @@ class GeminiEngine:
                         cached_t = usage.get("cachedContentTokenCount", 0)
                         total_t = usage.get("totalTokenCount", 0)
                         non_cached_in = max(prompt_t - cached_t, 0)
+                        if prompt_t or out_t:
+                            self.stats.record_tokens(prompt_t, cached_t, out_t)
                         log.info(
                             "Gemini javob: %d belgi, %.0fms | TOKENS in=%d (cached=%d, fresh=%d) out=%d total=%d cache_used=%s",
                             len(text), duration_ms,
