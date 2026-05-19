@@ -8,7 +8,7 @@ import html
 import logging
 import re
 from typing import List, Dict
-from urllib.parse import quote_plus, unquote, urlparse, parse_qs
+from urllib.parse import unquote, urlparse, parse_qs
 
 import aiohttp
 
@@ -56,28 +56,35 @@ def _resolve_ddg_url(url: str) -> str:
     return url
 
 
+def _format_results(query: str, results: List[Dict[str, str]]) -> str:
+    """Natijalarni AI uchun o'qiladigan formatda chiqarish."""
+    if not results:
+        return f"Qidiruv: {query!r}\nNatija topilmadi."
+    lines = [f"Qidiruv: {query!r}", f"Natijalar ({len(results)}):"]
+    for i, r in enumerate(results, 1):
+        lines.append(f"\n[{i}] {r['title']}")
+        lines.append(f"URL: {r['url']}")
+        if r.get("snippet"):
+            lines.append(f"Snippet: {r['snippet']}")
+    return "\n".join(lines)
+
+
 async def web_search(
     query: str,
     max_results: int = 5,
     region: str = "wt-wt",
     safe: str = "moderate",
     timeout: float = 15.0,
-) -> Dict[str, object]:
+) -> str:
     """DuckDuckGo orqali web qidirish.
 
-    Args:
-        query: qidiruv matni
-        max_results: maksimal natija soni (default 5)
-        region: hudud kodi (wt-wt = jahon)
-        safe: 'off' | 'moderate' | 'strict'
-
     Returns:
-        {"query": str, "results": [{"title", "url", "snippet"}], "count": int}
-        yoki {"error": str}
+        Formatlangan string — har natija title+URL+snippet bilan.
+        Xato bo'lsa "Web search xato: ..." matni.
     """
     q = (query or "").strip()
     if not q:
-        return {"error": "query bo'sh"}
+        return "Web search xato: query bo'sh"
 
     safe_map = {"off": "-2", "moderate": "-1", "strict": "1"}
     data = {
@@ -96,13 +103,13 @@ async def web_search(
             async with session.post(_DDG_HTML, data=data) as resp:
                 if resp.status != 200:
                     log.warning("web_search: DDG status=%s", resp.status)
-                    return {"error": f"qidiruv xizmati javob bermadi (HTTP {resp.status})"}
+                    return f"Web search xato: qidiruv xizmati javob bermadi (HTTP {resp.status})"
                 text = await resp.text()
     except asyncio.TimeoutError:
-        return {"error": "qidiruv timeout"}
+        return "Web search xato: qidiruv timeout"
     except Exception as e:
         log.error("web_search xato: %s", e)
-        return {"error": f"qidiruv xato: {e}"}
+        return f"Web search xato: {e}"
 
     results: List[Dict[str, str]] = []
     for m in _RESULT_RE.finditer(text):
@@ -117,10 +124,9 @@ async def web_search(
             break
 
     if not results:
-        # Fallback: balki "No results" sahifasi yoki bloklangan
         if "No results" in text or "no-results" in text:
-            return {"query": q, "results": [], "count": 0, "note": "natija topilmadi"}
+            return f"Qidiruv: {q!r}\nNatija topilmadi."
         log.warning("web_search: natija parse qilolmadi (sahifa o'lcham %d)", len(text))
-        return {"error": "qidiruv natijasini o'qib bo'lmadi"}
+        return "Web search xato: natijani o'qib bo'lmadi (DDG sahifasi o'zgargan bo'lishi mumkin)"
 
-    return {"query": q, "results": results, "count": len(results)}
+    return _format_results(q, results)
