@@ -17,6 +17,7 @@ from bot.tools.tabir_rag import TabirRAG
 from bot.tools.dalil_rag import DalilRAG
 from bot.tools.islamic_api import IslamicAPI
 from bot.tools.telegraph import upload_image, create_page
+from bot.tools.web_search import web_search
 from bot.supervisor import Supervisor
 
 log = logging.getLogger(__name__)
@@ -398,6 +399,11 @@ class ToolHandler:
                 return await self._get_chat_admins(params)
             case "kanalga_post":
                 return await self._kanalga_post(params)
+            case "web_search":
+                return await web_search(
+                    params.get("query", ""),
+                    max_results=int(params.get("max_results", 5)),
+                )
             case "telegraf_post":
                 return await self._telegraf_post(params)
             case "read_prompt":
