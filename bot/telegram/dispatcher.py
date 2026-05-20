@@ -1182,7 +1182,10 @@ async def on_message(message: types.Message):
         # -1003280067467 → Olima (arab tili o'rganuvchilar)
         # -1003831509848 → Mudarris (arab ana tili guruhi)
         ARAB_LEARNER_GROUP = {-1003280067467, -1003831509848}
-        if chat_id in ARAB_LEARNER_GROUP:
+        # -1003888959007 → Super Boshliq (quvnoq, sarkazmga boy): savol/mention/replyda
+        #   javob beradi, birovlarning suhbatiga aralashmaydi (arab naqshlari qo'llanmaydi)
+        SMART_FILTER_GROUP = ARAB_LEARNER_GROUP | {-1003888959007}
+        if chat_id in SMART_FILTER_GROUP:
             bot_username = (bot_me.username or "").lower()
             bot_name_low = Config.BOT_NAME.lower()
             text_lower = text.lower()
@@ -1227,20 +1230,22 @@ async def on_message(message: types.Message):
             )
             is_question = QUESTION_RE.search(text or "") is not None
 
-            # Arabcha to'g'ridan-to'g'ri murojaat naqshlari (botga qarab)
-            if chat_id == -1003280067467:
-                # Olima — ayol shaklidagi murojaatlar
-                ARABIC_ADDRESS_RE = re.compile(
-                    r"(يا\s*عالمة|أيتها\s*العالمة|يا\s*أستاذة|يا\s*معلمة|"
-                    r"يا\s*عَالِمَة|أيتها\s*المعلمة|يا\s*أم)",
-                )
-            else:
-                # Mudarris (-1003831509848) — erkak shaklidagi murojaatlar
-                ARABIC_ADDRESS_RE = re.compile(
-                    r"(يا\s*أستاذ|يا\s*شيخ|يا\s*مدرس|يا\s*معلم|"
-                    r"يا\s*أخ|أيها\s*الأستاذ|أيها\s*الشيخ|أيها\s*المعلم)",
-                )
-            arabic_addressed = ARABIC_ADDRESS_RE.search(text or "") is not None
+            # Arabcha to'g'ridan-to'g'ri murojaat naqshlari (faqat arab tili guruhlarida)
+            arabic_addressed = False
+            if chat_id in ARAB_LEARNER_GROUP:
+                if chat_id == -1003280067467:
+                    # Olima — ayol shaklidagi murojaatlar
+                    ARABIC_ADDRESS_RE = re.compile(
+                        r"(يا\s*عالمة|أيتها\s*العالمة|يا\s*أستاذة|يا\s*معلمة|"
+                        r"يا\s*عَالِمَة|أيتها\s*المعلمة|يا\s*أم)",
+                    )
+                else:
+                    # Mudarris (-1003831509848) — erkak shaklidagi murojaatlar
+                    ARABIC_ADDRESS_RE = re.compile(
+                        r"(يا\s*أستاذ|يا\s*شيخ|يا\s*مدرس|يا\s*معلم|"
+                        r"يا\s*أخ|أيها\s*الأستاذ|أيها\s*الشيخ|أيها\s*المعلم)",
+                    )
+                arabic_addressed = ARABIC_ADDRESS_RE.search(text or "") is not None
             if arabic_addressed:
                 name_referenced = True
 
