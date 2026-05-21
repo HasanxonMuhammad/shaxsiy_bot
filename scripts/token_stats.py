@@ -16,6 +16,7 @@ from collections import defaultdict
 GEMINI_RE = re.compile(
     r"(\d{4}-\d{2}-\d{2})[T ](\d{2}):\S* .*Gemini javob: \d+ belgi, [\d.]+ms \| TOKENS "
     r"in=(\d+) \(cached=(\d+), fresh=(\d+)\) out=(\d+) total=(\d+) cache_used=(\w+)"
+    r"(?: bot='([^']*)')?"  # group 9: bot nomi (eski loglarda yo'q)
 )
 # Userbot log: "OpenAI: 88 belgi | TOKENS in=7935 (cached=7000, fresh=935) out=32 total=7967 model=gpt-5.4-mini"
 OPENAI_RE = re.compile(
@@ -62,6 +63,8 @@ def main() -> None:
         "openai_total": 0,
         "openai_models": defaultdict(int),
         "openai_cost": 0.0,
+        # bot nomi -> {"req","fresh","cached","out"}
+        "gemini_by_bot": defaultdict(lambda: {"req": 0, "fresh": 0, "cached": 0, "out": 0}),
     })
 
     for line in sys.stdin:
@@ -74,6 +77,12 @@ def main() -> None:
             d["gemini_fresh"] += int(m.group(5))
             d["gemini_out"] += int(m.group(6))
             d["gemini_total"] += int(m.group(7))
+            bot = m.group(9) or "?(eski log)"
+            b = d["gemini_by_bot"][bot]
+            b["req"] += 1
+            b["cached"] += int(m.group(4))
+            b["fresh"] += int(m.group(5))
+            b["out"] += int(m.group(6))
             continue
         if m := OPENAI_RE.search(line):
             day = m.group(1)
@@ -120,6 +129,17 @@ def main() -> None:
             print(f"    in={d['gemini_in']:,} (cached={d['gemini_cached']:,} ({hit_rate:.0f}%), fresh={d['gemini_fresh']:,})")
             print(f"    out={d['gemini_out']:,}")
             print(f"    cost: ${gc:.3f}")
+            if d["gemini_by_bot"]:
+                print("    — bot bo'yicha:")
+                rows = sorted(d["gemini_by_bot"].items(), key=lambda kv: -kv[1]["req"])
+                for bot, b in rows:
+                    bc = (
+                        b["fresh"] * PRICE["gemini_fresh_in"] / 1_000_000
+                        + b["cached"] * PRICE["gemini_cached_in"] / 1_000_000
+                        + b["out"] * PRICE["gemini_out"] / 1_000_000
+                    )
+                    share = bc / gc * 100 if gc else 0
+                    print(f"        {bot:<16} {b['req']:>4} req  ${bc:.3f} ({share:.0f}%)")
         if d["openai_req"]:
             models_str = ", ".join(f"{m}={c}" for m, c in d["openai_models"].items())
             hit_rate = d["openai_cached"] / d["openai_in"] * 100 if d["openai_in"] else 0

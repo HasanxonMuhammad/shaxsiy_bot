@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 import aiohttp
 import google.generativeai as genai
 
+from bot.config import Config
+
 log = logging.getLogger(__name__)
 
 # AI Studio (API key) — default
@@ -455,10 +457,10 @@ class GeminiEngine:
                         if prompt_t or out_t:
                             self.stats.record_tokens(prompt_t, cached_t, out_t)
                         log.info(
-                            "Gemini javob: %d belgi, %.0fms | TOKENS in=%d (cached=%d, fresh=%d) out=%d total=%d cache_used=%s",
+                            "Gemini javob: %d belgi, %.0fms | TOKENS in=%d (cached=%d, fresh=%d) out=%d total=%d cache_used=%s bot=%r",
                             len(text), duration_ms,
                             prompt_t, cached_t, non_cached_in, out_t, total_t,
-                            bool(cache_id),
+                            bool(cache_id), Config.BOT_NAME,
                         )
                         return text
                     # Bo'sh javob — google_search olib retry
