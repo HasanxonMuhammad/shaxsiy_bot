@@ -10,11 +10,18 @@ from collections import defaultdict
 
 bot_dir = os.path.dirname(os.path.abspath(__file__))
 
-bots = [
+_all_bots = [
     {"name": "ShaxsiyBot", "env": ".env"},
     {"name": "Super Boshliq", "env": ".env.superboshliq"},
     {"name": "Olima", "env": ".env.aziza"},
 ]
+# Faqat .env fayli mavjud bo'lgan botlar ishga tushadi.
+# (Server'da qaysi .env bo'lsa — o'sha bot ishlaydi. Azure: 3 ta, GCP: 2 ta.)
+bots = [b for b in _all_bots if os.path.exists(os.path.join(bot_dir, b["env"]))]
+if not bots:
+    print("Hech qanday .env topilmadi — to'xtatildi.")
+    sys.exit(1)
+print(f"Ishga tushadigan botlar: {', '.join(b['name'] for b in bots)}")
 
 processes = []
 # Restart tracking
