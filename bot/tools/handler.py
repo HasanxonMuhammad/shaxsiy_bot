@@ -83,6 +83,16 @@ def markdown_to_html(text: str) -> str:
         text = _MARKDOWN_BOLD_RE.sub(r"<b>\1</b>", text)
         text = _MARKDOWN_BOLD_UNDERSCORE_RE.sub(r"<b>\1</b>", text)
         text = _MARKDOWN_CODE_RE.sub(r"<code>\1</code>", text)
+        # Telegram qo'llamaydigan struktura teglari → matn ekvivalenti.
+        # (gemini-3.5-flash ba'zan <ul>/<li>/<h3>/<p> chiqaradi — sanitatsiya
+        #  ularni xom teg qilib ko'rsatib qo'yardi.)
+        text = re.sub(r"<h[1-6][^>]*>\s*", "\n<b>", text, flags=re.IGNORECASE)
+        text = re.sub(r"\s*</h[1-6]>", "</b>\n", text, flags=re.IGNORECASE)
+        text = re.sub(r"<li[^>]*>\s*", "• ", text, flags=re.IGNORECASE)
+        text = re.sub(r"\s*</li>", "\n", text, flags=re.IGNORECASE)
+        text = re.sub(r"</?[uo]l[^>]*>\s*", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"<p[^>]*>\s*", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"\s*</p>", "\n\n", text, flags=re.IGNORECASE)
     except Exception as e:
         log.warning("markdown_to_html xatosi (%s) — asl matn", e)
     return text
