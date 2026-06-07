@@ -592,7 +592,7 @@ class ToolHandler:
             return "API kalit yo'q"
 
         # Gemini image generation — generateContent bilan
-        model = "gemini-2.5-flash-image"
+        model = "gemini-3.1-flash-image"
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={Config.GEMINI_API_KEYS[0]}"
         body = {
             "contents": [{"parts": [{"text": f"Generate an image: {prompt}"}]}],
