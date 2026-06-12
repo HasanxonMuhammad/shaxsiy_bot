@@ -53,6 +53,44 @@ def isolate_arabic(text: str) -> str:
 
 
 _ARABIC_DETECT_RE = re.compile(rf"[{_ARABIC_CHARS}]")
+_LATIN_CYR_RE = re.compile(r"[A-Za-zЀ-ӿԀ-ԯ]")
+_TAG_ONLY_RE = re.compile(r"<[^>]+>")
+_LEADING_TAGS_RE = re.compile(r"^((?:\s*<[^>]+>)*)(.*)$")
+
+
+def smart_arabic_bidi(text: str) -> str:
+    """Qatorma-qator aqlli bidi ishlov:
+
+    - Qator TO'LIQ arabcha (LTR harf yo'q) → boshiga RLM (U+200F) — butun qator
+      RTL base direction oladi, raqam/tinish belgilari to'g'ri tomonda turadi.
+    - Qator ARALASH (arabcha + lotin/kirill) → arab bo'laklari FSI/PDI bilan
+      izolyatsiya (isolate_arabic) — har segment o'z yo'nalishida.
+    - Arabcha yo'q qator → o'zgarishsiz.
+
+    HTML teglar hisobga olinmaydi (teg ichidagi lotin harflar matn emas).
+    RLM bosh teglar ICHIGA qo'yiladi (<blockquote>عربي → <blockquote>‏عربي)
+    — teg oldida turib qolsa rich parser bo'sh matn tuguni deb o'ylashi mumkin.
+    """
+    if not text:
+        return text
+    out = []
+    for line in text.split("\n"):
+        plain = _TAG_ONLY_RE.sub("", line)
+        if not _ARABIC_DETECT_RE.search(plain):
+            out.append(line)
+            continue
+        if _LATIN_CYR_RE.search(plain):
+            # aralash qator — segment izolyatsiyasi
+            out.append(isolate_arabic(line))
+            continue
+        # to'liq arabcha qator — RTL base
+        if "‏" in plain[:4]:
+            out.append(line)
+            continue
+        m = _LEADING_TAGS_RE.match(line)
+        lead, rest = m.group(1), m.group(2)
+        out.append(f"{lead}‏{rest}" if rest else line)
+    return "\n".join(out)
 # blockquote (ixtiyoriy attribute bilan) — DOTALL bilan ko'p qatorli content
 _BLOCKQUOTE_RE = re.compile(
     r"(<blockquote(?:\s[^>]*)?>)(.*?)(</blockquote>)",
