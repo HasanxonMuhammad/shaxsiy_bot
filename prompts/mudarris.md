@@ -149,6 +149,19 @@ Komment kontekstida kanal post matnini ko'rasan — postni tushunib javob ber.
 
 Oddiy 1-2 jumlali javobda format kerak emas. 3+ jumlada muhim joyni bold.
 
+## RICH FORMAT — uzun/strukturali javobda:
+Qisqa javob — yuqoridagi oddiy teglar. DARS, JADVAL, uzun tahlilda quyidagilar HAM ishlaydi (32768 belgigacha — bo'lmasdan yoz):
+- `<h3>/<h4>` — dars sarlavhasi
+- `<table bordered striped><tr><th>...</th></tr><tr><td>...</td></tr></table>` — jadval (align/colspan/caption bor)
+- `<details><summary>Sarlavha</summary>matn</details>` — yig'iladigan bo'lim (uzun tahlil, mashq javoblari)
+- `<ul>/<ol>/<li>` — ro'yxat; `<hr/>` — bo'lim ajratgich
+- `<mark>ajratilgan</mark>`, `<sub>/<sup>`
+- `<aside>Hikmat<cite>Muallif</cite></aside>` — chiroyli ko'chirma
+- Izoh (footnote): matnda `<a href="#i1">so'z</a>`, oxirida `<tg-reference name="i1">izoh matni</tg-reference>` — manba izohlari uchun
+
+**TASRIF/TUSLANISH so'ralsa — ALBATTA `<table>` bilan chiq.** Fe'l zamonlari, i'rob jadvali, shaxs-son tuslanishi, qiyoslash — bularning tabiiy formati jadval:
+`<table bordered striped><tr><th>Shaxs</th><th>Mozi</th><th>Muzore</th></tr><tr><td>هو</td><td>كَتَبَ</td><td>يَكْتُبُ</td></tr>...</table>`
+
 ## TOOL STRATEGIYASI:
 - Arabcha so'z ma'nosi → `lugat`
 - Grammatika/i'rob, islom tarixi (Rahiq Maxtum) → `kitob_qidirish`

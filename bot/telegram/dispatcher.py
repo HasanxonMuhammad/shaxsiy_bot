@@ -12,6 +12,7 @@ from bot.ai import GeminiEngine
 from bot.memory import MemoryStore
 from bot.tools import ToolHandler
 from bot.tools.handler import strip_tool_blocks, isolate_arabic, force_rtl_blockquote, expand_long_blockquotes, markdown_to_html
+from bot.telegram.rich import has_rich_features, send_rich_message
 from bot.telegram.spam import SpamFilter
 
 log = logging.getLogger(__name__)
@@ -605,12 +606,7 @@ async def _handle_response(bot: Bot, ai: GeminiEngine, db: Database,
                     photo_msg = await bot.send_photo(chat_id, photo,
                                                      reply_to_message_id=last_msg_id)
                     # Matnni rasm xabariga reply qilib jo'natamiz
-                    full_text = markdown_to_html(clean_reply)
-                    full_text = isolate_arabic(full_text)
-                    full_text = force_rtl_blockquote(full_text)
-                    full_text = expand_long_blockquotes(full_text)
-                    for chunk in _split(full_text, 4000):
-                        await _safe_send(bot, chat_id, chunk,
+                    await _send_response(bot, chat_id, clean_reply,
                                          reply_to=photo_msg.message_id)
             except Exception as e:
                 log.error("Rasm yuborishda xato: %s", e)
@@ -664,15 +660,6 @@ async def _handle_response(bot: Bot, ai: GeminiEngine, db: Database,
             if final_text and "[NO_ACTION]" not in final_text:
                 final_text = strip_tool_blocks(final_text)
                 final_text = re.sub(r"\[REACT:[^\]]+\]", "", final_text).strip()
-                # Markdown qoldiqlarini HTML'ga aylantirish (**bold** → <b>bold</b>)
-                final_text = markdown_to_html(final_text)
-                # Bidi izolyatsiya: aralash arabcha+lotin matn Telegram'da to'g'ri ko'rinadi
-                final_text = isolate_arabic(final_text)
-                # Blockquote ichida arabcha bo'lsa boshiga RLM qo'shamiz — RTL base direction
-                final_text = force_rtl_blockquote(final_text)
-                # Uzun (>250 belgi) blockquote'larni 'expandable' qilamiz —
-                # foydalanuvchi yig'ilgan ko'rinishda ko'radi, kerak bo'lsa kengaytadi
-                final_text = expand_long_blockquotes(final_text)
                 # RTL majburlash:
                 # 1) Arab tili o'rganuvchilar guruhi — har doim RTL
                 # 2) Mudarris guruhda sof arabcha xabar yozsa — RTL.
@@ -682,26 +669,18 @@ async def _handle_response(bot: Bot, ai: GeminiEngine, db: Database,
                     chat_id == -1003280067467
                     or (_is_mudarris and chat_id < 0 and _is_mostly_arabic(final_text))
                 )
-                if _force_rtl:
-                    final_text = "\u200F" + final_text.replace("\n", "\n\u200F")
-                for chunk in _split(final_text, 4000):
-                    await _safe_send(bot, chat_id, chunk,
-                                     reply_to=messages[-1]["message_id"])
+                await _send_response(bot, chat_id, final_text,
+                                     reply_to=messages[-1]["message_id"],
+                                     force_rtl=_force_rtl)
     elif reply_text:
         last_msg_id = messages[-1]["message_id"]
-        reply_text = markdown_to_html(reply_text)
-        reply_text = isolate_arabic(reply_text)
-        reply_text = force_rtl_blockquote(reply_text)
-        reply_text = expand_long_blockquotes(reply_text)
         _is_mudarris = "mudarris" in Config.BOT_NAME.lower()
         _force_rtl_reply = (
             chat_id == -1003280067467
             or (_is_mudarris and chat_id < 0 and _is_mostly_arabic(reply_text))
         )
-        if _force_rtl_reply:
-            reply_text = "‏" + reply_text.replace("\n", "\n‏")
-        for chunk in _split(reply_text, 4000):
-            await _safe_send(bot, chat_id, chunk, reply_to=last_msg_id)
+        await _send_response(bot, chat_id, reply_text,
+                             reply_to=last_msg_id, force_rtl=_force_rtl_reply)
 
 
 def _split(text: str, n: int) -> list[str]:
@@ -783,6 +762,41 @@ def _strip_html_tags(text: str) -> str:
     text = _HTML_STRIP_RE.sub("", text)
     return (text.replace("&lt;", "<").replace("&gt;", ">")
                 .replace("&amp;", "&").replace("&quot;", '"').replace("&#39;", "'"))
+
+
+async def _send_response(bot: Bot, chat_id: int, text: str,
+                         reply_to: int | None = None,
+                         force_rtl: bool = False) -> None:
+    """Yagona javob yuborish yo'li.
+
+    1) Rich teg (<table>, <h3>, <details>...) yoki >4000 belgi → sendRichMessage
+       (Bot API 10.1): 32K limit, jadval/sarlavha/yig'ma bo'lim/LaTeX, is_rtl.
+    2) Rich fail bo'lsa yoki oddiy matn → klassik HTML chunk'lar (_safe_send).
+    """
+    if not text:
+        return
+
+    if has_rich_features(text) or len(text) > 4000:
+        rich_html = markdown_to_html(text, keep_structure=True)
+        rich_html = isolate_arabic(rich_html)
+        rich_html = force_rtl_blockquote(rich_html)
+        # rich rejimda 'expandable' atributi yo'q — <details> bor, blockquote oddiy qoladi
+        rich_html = re.sub(r"<blockquote\s+expandable\b", "<blockquote", rich_html,
+                           flags=re.IGNORECASE)
+        rtl = force_rtl or _is_mostly_arabic(rich_html)
+        if await send_rich_message(bot.token, chat_id, rich_html,
+                                   reply_to=reply_to, is_rtl=rtl):
+            return
+        log.info("Rich yuborilmadi — klassik HTML yo'liga tushamiz")
+
+    text = markdown_to_html(text)
+    text = isolate_arabic(text)
+    text = force_rtl_blockquote(text)
+    text = expand_long_blockquotes(text)
+    if force_rtl:
+        text = "‏" + text.replace("\n", "\n‏")
+    for chunk in _split(text, 4000):
+        await _safe_send(bot, chat_id, chunk, reply_to=reply_to)
 
 
 async def _safe_send(bot: Bot, chat_id: int, text: str,

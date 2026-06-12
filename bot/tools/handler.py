@@ -70,12 +70,15 @@ _MARKDOWN_BOLD_UNDERSCORE_RE = re.compile(r"__([^\n_][^_]*?[^\n_]|[^\n_])__")
 _MARKDOWN_CODE_RE = re.compile(r"`([^`\n]+)`")
 
 
-def markdown_to_html(text: str) -> str:
+def markdown_to_html(text: str, keep_structure: bool = False) -> str:
     """Gemini ba'zan `**bold**` markdown'ga qaytadi — HTML'ga aylantiramiz.
 
     Telegram parse_mode=HTML rejimida `**` literal asteriks bo'lib qoladi. Bu
     funksiya AI javobidagi tipik markdown qoldiqlarini HTML teglarga aylantirib,
     o'qib bo'lmas asteriks chiqishini oldini oladi.
+
+    keep_structure=True — sendRichMessage yo'li uchun: <h3>/<ul>/<li>/<p> kabi
+    struktura teglari rich rejimda qo'llab-quvvatlanadi, ularni pasaytirmaymiz.
     """
     if not text:
         return text
@@ -83,16 +86,17 @@ def markdown_to_html(text: str) -> str:
         text = _MARKDOWN_BOLD_RE.sub(r"<b>\1</b>", text)
         text = _MARKDOWN_BOLD_UNDERSCORE_RE.sub(r"<b>\1</b>", text)
         text = _MARKDOWN_CODE_RE.sub(r"<code>\1</code>", text)
-        # Telegram qo'llamaydigan struktura teglari → matn ekvivalenti.
-        # (gemini-3.5-flash ba'zan <ul>/<li>/<h3>/<p> chiqaradi — sanitatsiya
-        #  ularni xom teg qilib ko'rsatib qo'yardi.)
-        text = re.sub(r"<h[1-6][^>]*>\s*", "\n<b>", text, flags=re.IGNORECASE)
-        text = re.sub(r"\s*</h[1-6]>", "</b>\n", text, flags=re.IGNORECASE)
-        text = re.sub(r"<li[^>]*>\s*", "• ", text, flags=re.IGNORECASE)
-        text = re.sub(r"\s*</li>", "\n", text, flags=re.IGNORECASE)
-        text = re.sub(r"</?[uo]l[^>]*>\s*", "", text, flags=re.IGNORECASE)
-        text = re.sub(r"<p[^>]*>\s*", "", text, flags=re.IGNORECASE)
-        text = re.sub(r"\s*</p>", "\n\n", text, flags=re.IGNORECASE)
+        if not keep_structure:
+            # Telegram klassik HTML qo'llamaydigan struktura teglari → matn ekvivalenti.
+            # (gemini-3.5-flash ba'zan <ul>/<li>/<h3>/<p> chiqaradi — sanitatsiya
+            #  ularni xom teg qilib ko'rsatib qo'yardi.)
+            text = re.sub(r"<h[1-6][^>]*>\s*", "\n<b>", text, flags=re.IGNORECASE)
+            text = re.sub(r"\s*</h[1-6]>", "</b>\n", text, flags=re.IGNORECASE)
+            text = re.sub(r"<li[^>]*>\s*", "• ", text, flags=re.IGNORECASE)
+            text = re.sub(r"\s*</li>", "\n", text, flags=re.IGNORECASE)
+            text = re.sub(r"</?[uo]l[^>]*>\s*", "", text, flags=re.IGNORECASE)
+            text = re.sub(r"<p[^>]*>\s*", "", text, flags=re.IGNORECASE)
+            text = re.sub(r"\s*</p>", "\n\n", text, flags=re.IGNORECASE)
     except Exception as e:
         log.warning("markdown_to_html xatosi (%s) — asl matn", e)
     return text
