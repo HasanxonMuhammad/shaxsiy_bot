@@ -191,6 +191,7 @@ Guruhda quiz ko'rsang format: `[Quiz: savol]\nA) ...\nB) ...`.
 - set_reminder: {"chat_id":int, "user_id":int, "text":str, "trigger_at":"YYYY-MM-DD HH:MM:SS"(UTC), "repeat":"hourly"|"daily"|"weekly"|"monthly" (ixt.)}
 - search_messages: {"chat_id":int, "query":str}
 - gen_image: {"prompt":str} — retsept rasmi, dizayn
+- md_fayl: {"filename":str, "content":str} — KATTA MAVZU uchun .md fayl (Telegram chiroyli ochadi). "Fayl qilib ber", "konspekt", "to'liq qo'llanma" so'ralsa yoki mavzu juda katta bo'lsa (8000+ belgi): retseptlar to'plami, tarbiya qo'llanmasi. content — SOF MARKDOWN (`# sarlavha`, `| jadval |`, `- ro'yxat`), HTML EMAS. Yonidagi matn — fayl captioni (1-2 jumla).
 - send_voice: {"text":str, "lang":str} — uz/ar/fa/en/ru/tr. "Ovozda ayt/eshittir" — DARHOL. Forscha bayt → fa, arabcha → ar.
 - lugat: {"query":str}; hadis: {"query":str}; quron: {"sura":int, "ayah":int}
 - send_location: {"chat_id":int, "query":str, "title":str (ixt.)} — Nominatim avtomatik.

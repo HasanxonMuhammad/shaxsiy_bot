@@ -339,6 +339,8 @@ class ToolHandler:
                 return await self._update_student(params)
             case "gen_image":
                 return await self._gen_image(params)
+            case "md_fayl":
+                return self._md_fayl(params)
             case "mute_chat":
                 return await self._mute_chat(params)
             case "unmute_chat":
@@ -584,6 +586,23 @@ class ToolHandler:
             return "Yangilanadigan maydon yo'q"
         await self.db.update_student(user_id, **fields)
         return f"✅ O'quvchi yangilandi: {', '.join(fields.keys())}"
+
+    def _md_fayl(self, p: dict) -> str:
+        """Markdown fayl tayyorlash — Telegram .md fayllarni native ochadi (2026-06).
+
+        Katta mavzu/konspekt/qo'llanma uchun: AI sof GFM markdown yozadi,
+        dispatcher MDFILE: markerini ko'rib document qilib yuboradi.
+        """
+        import base64 as b64mod
+        filename = (p.get("filename") or "mavzu").strip()
+        filename = re.sub(r"[^\w\-. ']", "_", filename)
+        if not filename.lower().endswith(".md"):
+            filename += ".md"
+        content = p.get("content", "")
+        if not content.strip():
+            return "Xato: content bo'sh — markdown matn kerak"
+        encoded = b64mod.b64encode(content.encode("utf-8")).decode()
+        return f"MDFILE:{filename}:{encoded}"
 
     async def _gen_image(self, p: dict) -> str:
         """Gemini Imagen orqali rasm yaratish. Natija: base64 rasm."""

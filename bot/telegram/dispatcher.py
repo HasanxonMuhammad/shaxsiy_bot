@@ -612,6 +612,22 @@ async def _handle_response(bot: Bot, ai: GeminiEngine, db: Database,
                 log.error("Rasm yuborishda xato: %s", e)
                 await bot.send_message(chat_id, "Rasm yaratdim lekin yuborishda xato chiqdi 😅",
                                        reply_to_message_id=last_msg_id)
+        elif result.startswith("MDFILE:"):
+            try:
+                _, fname, fdata = result.split(":", 2)
+                doc = BufferedInputFile(b64.b64decode(fdata), filename=fname)
+                # Tool yonidagi matn — qisqa anons (caption). HTML'siz, 1024 limit.
+                cap = _strip_html_tags(reply_text or "").strip() or None
+                if cap and len(cap) > 1024:
+                    cap = cap[:1021] + "..."
+                await bot.send_document(chat_id, doc,
+                                        reply_to_message_id=last_msg_id,
+                                        caption=cap)
+            except Exception as e:
+                log.error("MD fayl yuborishda xato: %s", e)
+                await bot.send_message(chat_id,
+                                       "Fayl tayyorladim lekin yuborishda xato chiqdi 😅",
+                                       reply_to_message_id=last_msg_id)
         elif result.startswith("VOICE:"):
             try:
                 audio_bytes = b64.b64decode(result[6:])
@@ -627,7 +643,7 @@ async def _handle_response(bot: Bot, ai: GeminiEngine, db: Database,
             # chain'lanmaydi — bir marta bajarilgan, tugagan.
             FINAL_ACTION_TOOLS = {
                 "telegraf_post", "kanalga_post", "guruhga_yoz",
-                "send_poll", "send_voice", "gen_image",
+                "send_poll", "send_voice", "gen_image", "md_fayl",
                 "ban_user", "kick_user", "mute_user", "unban_user",
                 "delete_message", "set_reminder", "save_lesson",
                 "sv_restart", "sv_deploy", "sv_edit",

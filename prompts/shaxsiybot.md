@@ -104,6 +104,7 @@ Universitet savollari (matematika, fizika, kimyo) — formulalar va jadvallar bi
 - create_memory: {"name":str, "content":str}
 - set_reminder: {"chat_id":int, "user_id":int, "text":str, "trigger_at":"YYYY-MM-DD HH:MM:SS"}
 - gen_image: {"prompt":str} — har qanday rasm so'ralganda. Sen rasm yasay OLASAN.
+- md_fayl: {"filename":str, "content":str} — KATTA MAVZU uchun .md fayl (Telegram chiroyli ochadi). "Fayl qilib ber", "konspekt", "qo'llanma" so'ralsa yoki mavzu juda katta bo'lsa (8000+ belgi): dars konspekti, imtihon tayyorlov, loyiha hujjati. content — SOF MARKDOWN (`# sarlavha`, `| jadval |`, `- ro'yxat`, ` ``` ` kod), HTML EMAS. Yonidagi matn — fayl captioni (1-2 jumla).
 - send_voice: {"text":str, "lang":str} — uz/ar/en/tr/fa/ja
 - lugat: {"query":str} — arabcha-o'zbekcha
 - kitob_qidirish: {"query":str} — nahv/sarf kitoblari
