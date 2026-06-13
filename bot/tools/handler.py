@@ -91,6 +91,48 @@ def smart_arabic_bidi(text: str) -> str:
         lead, rest = m.group(1), m.group(2)
         out.append(f"{lead}‏{rest}" if rest else line)
     return "\n".join(out)
+
+
+_TD_TH_RE = re.compile(
+    r"(<(t[dh])\b)([^>]*)(>)(.*?)(</\2>)",
+    re.DOTALL | re.IGNORECASE,
+)
+_BIDI_MARKS = "‏⁦⁧⁨⁩‎‪‫‬"
+
+
+def align_arabic_table_cells(html: str) -> str:
+    """Jadval katakchasi (<td>/<th>) faqat arabcha bo'lsa — o'ngga tortadi.
+
+    Telegram mobil klient qisqa arabcha so'zni LTR katakda chap chetga qo'yadi —
+    natijada qo'shni ustun matni bilan ustma-ust chiqadi. Yechim: arabcha-only
+    katakka `align="right"` + RTL base (RLM), ichidagi FSI/PDI izolyatsiyani
+    olib tashlaymiz (katakning o'zi endi RTL — segment izolyatsiya keraksiz).
+    Aralash (arab+lotin) katak tegmaydi.
+    """
+    if "<t" not in html.lower():
+        return html
+
+    def _proc(m: "re.Match") -> str:
+        open_start, _tag, attrs, gt, content, close_tag = m.groups()
+        plain = _TAG_ONLY_RE.sub("", content)
+        plain = "".join(c for c in plain if c not in _BIDI_MARKS)
+        if not _ARABIC_DETECT_RE.search(plain):
+            return m.group(0)            # arabcha yo'q — tegmaymiz
+        if _LATIN_CYR_RE.search(plain):
+            return m.group(0)            # aralash katak — tegmaymiz
+        if "align" in attrs.lower():
+            return m.group(0)            # allaqachon alignlangan
+        # FSI/PDI izolyatsiyani olib tashlab, RLM base qo'yamiz
+        clean = content.replace("⁨", "").replace("⁩", "").lstrip("‏")
+        return f'{open_start}{attrs} align="right"{gt}‏{clean}{close_tag}'
+
+    try:
+        return _TD_TH_RE.sub(_proc, html)
+    except Exception as e:
+        log.warning("align_arabic_table_cells xatosi (%s) — asl matn", e)
+        return html
+
+
 # blockquote (ixtiyoriy attribute bilan) — DOTALL bilan ko'p qatorli content
 _BLOCKQUOTE_RE = re.compile(
     r"(<blockquote(?:\s[^>]*)?>)(.*?)(</blockquote>)",

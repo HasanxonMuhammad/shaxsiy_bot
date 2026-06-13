@@ -11,7 +11,7 @@ from bot.db import Database
 from bot.ai import GeminiEngine
 from bot.memory import MemoryStore
 from bot.tools import ToolHandler
-from bot.tools.handler import strip_tool_blocks, isolate_arabic, smart_arabic_bidi, force_rtl_blockquote, expand_long_blockquotes, markdown_to_html
+from bot.tools.handler import strip_tool_blocks, isolate_arabic, smart_arabic_bidi, align_arabic_table_cells, force_rtl_blockquote, expand_long_blockquotes, markdown_to_html
 from bot.telegram.rich import has_rich_features, send_rich_message
 from bot.telegram.spam import SpamFilter
 
@@ -795,6 +795,7 @@ async def _send_response(bot: Bot, chat_id: int, text: str,
     if has_rich_features(text) or len(text) > 4000:
         rich_html = markdown_to_html(text, keep_structure=True)
         rich_html = smart_arabic_bidi(rich_html)
+        rich_html = align_arabic_table_cells(rich_html)
         rich_html = force_rtl_blockquote(rich_html)
         # rich rejimda 'expandable' atributi yo'q — <details> bor, blockquote oddiy qoladi
         rich_html = re.sub(r"<blockquote\s+expandable\b", "<blockquote", rich_html,
