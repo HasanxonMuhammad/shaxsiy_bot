@@ -49,7 +49,9 @@ BASE_DELAY_MS = 500
 # Xato turlari (SDK patterndan — markazlashtirilgan)
 RATE_LIMIT_MARKERS = ["429", "quota", "rate limit", "resource_exhausted"]
 AUTH_ERROR_MARKERS = ["api_key_invalid", "api key expired", "permission_denied"]
-TRANSIENT_MARKERS = ["503", "502", "timeout", "connection"]
+TRANSIENT_MARKERS = ["503", "502", "500", "504", "timeout", "connection",
+                     "high demand", "overloaded", "unavailable", "try again later",
+                     "internal error", "deadline"]
 
 
 def _classify_error(error_str: str) -> str:
@@ -501,6 +503,10 @@ class GeminiEngine:
 
                 error_msg = data.get("error", {}).get("message", "")
                 error_type = _classify_error(error_msg)
+                # HTTP 5xx — matn "503" demasa ham (masalan "high demand") transient deb qaraymiz,
+                # shunda retry + fallback model ishlaydi (jim qolmaslik uchun).
+                if error_type == "unknown" and resp.status >= 500:
+                    error_type = "transient"
                 self.stats.record(duration_ms, False)
 
                 # Cache bilan bog'liq xato — cache'ni bekor qilib, no-cache bilan retry
